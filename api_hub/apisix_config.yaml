@@ -1,0 +1,81 @@
+apisix:
+  node_listen: 9080              # APISIX listening port
+  enable_ipv6: false
+  extra_lua_path: "/opt/?.lua"
+  enable_control: true
+  allow_embedding: true
+  control:
+    ip: "0.0.0.0"
+    port: 9092
+  security:
+      access_control_allow_origin: "*"
+      access_control_allow_credentials: true  # Support using custom CORS configuration
+      access_control_allow_headers: "Authorization"
+      access_control_allow_methods: "*"
+      x_frame_options: "deny"
+      content_security_policy: "default-src '127.0.0.1'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 127.0.0.1:3000" 
+
+  # Enable Prometheus plugin for metrics exposure
+  enable_prometheus: true
+
+  # Prometheus metrics exposure port
+  prometheus:
+    port: 9091                  # Exposing metrics on port 9091
+    format: "prometheus"
+
+deployment:
+  admin:
+    allow_admin:               # https://nginx.org/en/docs/http/ngx_http_access_module.html#allow
+      - 0.0.0.0/0              # We need to restrict IP access rules for security. 0.0.0.0/0 is for test.
+
+    admin_key:
+      - name: "admin"
+        key: edd1c9f034335f136f87ad84b625c8f1
+        role: admin              # admin: manage all configuration data
+
+      - name: "viewer"
+        key: 4054f7cf07e344346cd3f287985e76a2
+        role: viewer
+
+  etcd:
+    host:                        # It's possible to define multiple etcd hosts addresses of the same etcd cluster.
+      - "http://49.205.172.103:2379"        # Multiple etcd address
+    prefix: "/apisix"            # APISIX configurations prefix
+    timeout: 30  
+
+logger:
+  level: "info"
+  file: "/usr/local/apisix/logs/error.log"
+
+log:
+  error_log: /var/log/apisix/error.log
+  access_log: /var/log/apisix/access.log
+# nginx_config:
+#   error_log: logs/error.log info  # Change "warn" to "info" to allow logging
+
+
+plugin_attr:
+  prometheus:
+    export_uri: /apisix/prometheus/metrics
+    export_addr:
+      ip: "0.0.0.0"
+      port: 9091
+  redis_cache:
+    redis_host: "13.203.59.217"
+    redis_port: 6379
+    redis_password: ""
+    redis_db: 0
+    cache_ttl: 6
+  global_rules:
+    enable: true
+    
+nginx_config:
+  http:
+    enable_buffering: true
+
+
+plugins:
+  - proxy-rewrite
+  - transform_response
+  - cache_redis
+  - prometheus  # Enable the Prometheus plugin for metrics collection

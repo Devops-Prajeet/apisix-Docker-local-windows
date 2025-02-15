@@ -1,0 +1,26 @@
+version: '3.8'
+services:
+  etcd:
+    image: bitnami/etcd:3.5.11
+    container_name: etcd
+    restart: always
+    volumes:
+      - etcd_data:/bitnami/etcd
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+      - ETCD_ENABLE_V2=true
+      - ETCD_ADVERTISE_CLIENT_URLS=http://49.205.172.103:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    networks:
+      - etcd_network
+
+volumes:
+  etcd_data:
+    driver: local
+
+networks:
+  etcd_network:
+    driver: bridge
