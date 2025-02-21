@@ -60,6 +60,12 @@ plugin_attr:
     export_addr:
       ip: "0.0.0.0"
       port: 9091
+    metrics:                                 # Create extra labels from built-in variables.
+      http_status:
+        extra_labels:                        # Set the extra labels for http_status metrics.
+          - upstream_addr: $upstream_addr    # Add an extra upstream_addr label with value being the NGINX variable $upstream_addr.
+          - route_name: $route_name
+          - client_ip: $remote_addr  
   redis_cache:
     redis_host: "13.203.59.217"
     redis_port: 6379
@@ -75,7 +81,13 @@ nginx_config:
 
 
 plugins:
+  
+  - multi-auth
+  - key-auth
+  - consumer-restriction
   - proxy-rewrite
   - transform_response
   - cache_redis
   - prometheus  # Enable the Prometheus plugin for metrics collection
+  - api_chainer_v2
+  

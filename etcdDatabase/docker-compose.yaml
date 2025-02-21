@@ -5,7 +5,7 @@ services:
     container_name: etcd
     restart: always
     volumes:
-      - etcd_data:/bitnami/etcd
+      - ./etcd_data:/bitnami/etcd 
     environment:
       - ALLOW_NONE_AUTHENTICATION=yes
       - ETCD_ENABLE_V2=true
@@ -14,12 +14,12 @@ services:
     ports:
       - "2379:2379"
       - "2380:2380"
-    networks:
+    networks: 
       - etcd_network
 
-volumes:
-  etcd_data:
-    driver: local
+# volumes:
+#   etcd_data:
+#     driver: local
 
 networks:
   etcd_network:

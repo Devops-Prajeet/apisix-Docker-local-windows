@@ -1,7 +1,8 @@
 local core = require("apisix.core")
 local redis = require("resty.redis")
 local cjson = require("cjson.safe")  -- JSON encoding/decoding
-
+local consumer_mod = require("apisix.consumer")
+local http = require "resty.http"
 local plugin_name = "cache_redis"
 
 local schema = {
@@ -26,6 +27,40 @@ local function get_config_value(value, default)
     return value ~= nil and value or default
 end
 
+local function get_consumer_by_key(api_key)
+    local httpc = http.new()
+    local res, err = httpc:request_uri("http://49.205.172.103:9180/apisix/admin/consumers", {
+        method = "GET",
+        headers = {
+            ["X-API-KEY"] = "edd1c9f034335f136f87ad84b625c8f1"
+        }
+    })
+
+    local consumers, decode_err = core.json.decode(res.body)
+
+    if consumers then
+        core.log.warn("Failed to decode JSON response: ", core.json.encode(consumers['list']))
+        -- return nil
+    end
+
+    
+    -- core.log.warn("Unexpected response format from APISIX Admin API",type(res.body))
+    -- if type(consumers) ~= "table" or not consumers.list then
+    --     core.log.warn("Unexpected response format from APISIX Admin API")
+       
+    -- end
+    for _, consumer in ipairs(consumers['list']) do
+        if consumer.value and consumer.value.plugins and consumer.value.plugins["key-auth"] then
+            local stored_key = consumer.value.plugins["key-auth"].key
+            if stored_key == api_key then
+                return consumer.value.username -- Return the matching username
+            end
+        end
+    end
+
+    return nil
+end
+
 -- 🔹 Access Phase: Check Redis Cache Before Forwarding Request
 function _M.access(conf, ctx)
     -- ✅ Ensure default values are set
@@ -42,7 +77,12 @@ function _M.access(conf, ctx)
         core.log.error("Failed to connect to Redis: ", err)
         return
     end
+    
+    local headers = ngx.req.get_headers()
+    ctx.var.apiKey = headers['api-key']
 
+    local consumer = get_consumer_by_key(ctx.var.apiKey)
+    ctx.var.consumer  = consumer
     -- Ensure `ctx.var.request_id` is available
     local request_id = ctx.var.request_id or ngx.var.request_id or "unknown_request"
     local key = redis_key_prefix .. request_id
@@ -74,6 +114,7 @@ end
 -- 🔹 Body Filter Phase: Capture Response (Cannot Write to Redis Here!)
 function _M.body_filter(conf, ctx)
     local route = ctx.matched_route.value.uri
+    route = route:gsub("^/", "")
     if not ctx.cache_redis_key then
         return -- No key means response was already served from cache
     end
@@ -88,7 +129,9 @@ function _M.body_filter(conf, ctx)
     ctx.cache_response_body = {
         actual = ctx.var.responseBodyFromSource,
         tranform = res_body,
-        api_id = route
+        api_id = route,
+        apiKey = ctx.var.apiKey,
+        username = ctx.var.consumer
     }
     
     
@@ -122,6 +165,8 @@ local function store_in_redis(premature, redis_host, redis_port, key, response_b
 
     transformData['result'] = nil
     transformData['api_id'] = response_body.api_id
+    transformData['apiKey'] = response_body.apiKey
+    transformData['username'] = response_body.username
     actualData['result'] = nil
 
 

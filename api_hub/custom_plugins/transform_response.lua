@@ -12,7 +12,7 @@ local plugin_name = "transform_response"
 local schema = { type = "object", properties = {} }
 
 local _M = {
-    version = 0.1,
+    version = 1.0,
     priority = 2000,  -- High priority for modifying responses
     name = plugin_name,
     schema = schema
@@ -50,14 +50,9 @@ local function generate_transaction_id()
     return str.to_hex(sha256:final())  -- Return SHA-256 hash as hex string
 end
 
-local response_code_map = {
-    [200] = 101,
-    [400] = 102,
-    [503] = 110
-}
 
 local billable_dict = {
-    [1] = { BILLABLE = "True", MESSAGE = "Success" },
+    [1] = { BILLABLE = "True", MESSAGE = "Success" },   
     [2] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
     [3] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
     [7] = { BILLABLE = "False", MESSAGE = "Number of PANs exceeds the limit (5)" },
@@ -77,8 +72,26 @@ local billable_dict = {
     [107] = { BILLABLE = "False", MESSAGE = "Invalid OTP" },
     [108] = { BILLABLE = "False", MESSAGE = "This is no longer active" },
     [109] = { BILLABLE = "False", MESSAGE = "Aadhaar suspended or cancelled. Please verify your Aadhaar at:https://resident.uidai.gov.in/verify " },
-    [110] = { BILLABLE = "False", MESSAGE = "Source Unavailable" }
+    [110] = { BILLABLE = "False", MESSAGE = "Source Unavailable" },
+    [403] = { BILLABLE = "False", MESSAGE = "Request limit exceeded" },
+    [401] = { BILLABLE = "False", MESSAGE = "Unauthorized" }
 }
+
+local success_status_code = {1,200}
+local invalid_missing_status_code = {401,301,3}
+local no_record_found_status_code = {2,4}
+
+-- Function to check if value exists in a table
+local function is_in_list(value, list)
+    for _, v in ipairs(list) do
+        if v == value then
+            return true
+        end
+    end
+    return false
+end
+-- local source_unavaible_status_code = [1]
+
 
 -- Capture request start time
 function _M.access(conf, ctx)
@@ -115,6 +128,29 @@ function _M.body_filter(conf, ctx)
         
         local sourceMessage = data['message']
         local result = { }
+        if ngx.status == 401 then
+            result["response_code"] = 401
+            result["response_message"] = "Bad credentials provided"
+            local new_bodys = new_json.encode(result)
+        
+            -- Set modified response and terminate further chunk processing
+            ngx.arg[1] = new_bodys
+            ngx.arg[2] = true
+            return
+            
+        elseif ngx.status == 403 then 
+            result["response_code"] = 403
+            result["response_message"] = "Access Denied"
+            local new_bodys = new_json.encode(result)
+        
+            -- Set modified response and terminate further chunk processing
+            ngx.arg[1] = new_bodys
+            ngx.arg[2] = true
+            return
+
+        end
+
+
         local request_body = ngx.req.get_body_data()
         local input_data = request_body and pcall(json.decode, request_body) and json.decode(request_body) or {}
         result["input"] = input_data
@@ -123,14 +159,20 @@ function _M.body_filter(conf, ctx)
         result["transaction_id"] = generate_transaction_id()
 
         -- Get HTTP status from the response
-        local http_status = ngx.status  -- Get the HTTP status code from Nginx
-
+        local http_status = data.status  -- Get the HTTP status code from Nginx
+        
         -- Map source HTTP status to response code
-        if http_status == 200 and sourceMessage == "No record found" then
+        if is_in_list(http_status, success_status_code) then
+            result["response_code"] = 101
+        elseif is_in_list(http_status, invalid_missing_status_code) then
+            result["response_code"] = 102
+        elseif is_in_list(http_status, no_record_found_status_code) then
             result["response_code"] = 103
-        else
-            result["response_code"] = response_code_map[http_status] or 999 -- Default to 999 if unknown status
+        else  
+            result["response_code"] = 110
         end
+        
+        
 
         local billable_info = billable_dict[result["response_code"]] or { BILLABLE = "False", MESSAGE = "Unknown Response Code" }
 
@@ -139,10 +181,10 @@ function _M.body_filter(conf, ctx)
         result["request_timestamp"] = ngx.ctx.request_timestamp  
         result["response_timestamp"] = get_timestamp()
         result['result'] = data.result 
-
+        
         -- Encode modified response
         local new_body = new_json.encode(result)
-
+        
         -- Set modified response and terminate further chunk processing
         ngx.arg[1] = new_body
         ngx.arg[2] = true  -- Mark response as fully processed
