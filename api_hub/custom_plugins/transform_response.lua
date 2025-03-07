@@ -122,8 +122,8 @@ function _M.body_filter(conf, ctx)
         new_json.encode_sparse_array(true, 1, 1)
         local data,err = new_json.decode(full_body)
         if not data then
-            core.log.warn("JSON decoding failed: ", success)
-            return
+            core.log.warn("JSON decoding failed:dfsdfsdfsdfsdfsdf ", full_body)
+            -- return
         end
         
         local sourceMessage = data['message']
@@ -159,9 +159,10 @@ function _M.body_filter(conf, ctx)
         result["transaction_id"] = generate_transaction_id()
 
         -- Get HTTP status from the response
-        local http_status = data.status  -- Get the HTTP status code from Nginx
+        local http_status = tonumber(data.status)  -- Get the HTTP status code from Nginx
         
         -- Map source HTTP status to response code
+
         if is_in_list(http_status, success_status_code) then
             result["response_code"] = 101
         elseif is_in_list(http_status, invalid_missing_status_code) then
@@ -177,17 +178,23 @@ function _M.body_filter(conf, ctx)
         local billable_info = billable_dict[result["response_code"]] or { BILLABLE = "False", MESSAGE = "Unknown Response Code" }
 
         result['billable'] = billable_info.BILLABLE
-        result['message'] = billable_info.MESSAGE
+
+        if billable_info.BILLABLE == "True" then
+            result['success'] = "True"
+        else 
+            result['success'] = "False"
+        end
+
+        result['response_message'] = billable_info.MESSAGE
         result["request_timestamp"] = ngx.ctx.request_timestamp  
         result["response_timestamp"] = get_timestamp()
-        result['result'] = data.result 
+        result['result'] = data and data.result or ""
         
         -- Encode modified response
         local new_body = new_json.encode(result)
-        
         -- Set modified response and terminate further chunk processing
         ngx.arg[1] = new_body
-        ngx.arg[2] = true  -- Mark response as fully processed
+        ngx.arg[2] = true
     end
 end
 

@@ -37,6 +37,11 @@ deployment:
         key: 4054f7cf07e344346cd3f287985e76a2
         role: viewer
 
+  # etcd:
+  #   host:                        # It's possible to define multiple etcd hosts addresses of the same etcd cluster.
+  #     - "http://13.202.148.227:2379"        # Multiple etcd address
+  #   prefix: "/apisix"            # APISIX configurations prefix
+  #   timeout: 30 
   etcd:
     host:                        # It's possible to define multiple etcd hosts addresses of the same etcd cluster.
       - "http://49.205.172.103:2379"        # Multiple etcd address
@@ -67,7 +72,7 @@ plugin_attr:
           - route_name: $route_name
           - client_ip: $remote_addr  
   redis_cache:
-    redis_host: "13.203.59.217"
+    redis_host: "13.202.148.227"
     redis_port: 6379
     redis_password: ""
     redis_db: 0
@@ -84,10 +89,14 @@ plugins:
   
   - multi-auth
   - key-auth
+  - basic-auth
+  - sanay
+  - pan_aadhar
   - consumer-restriction
   - proxy-rewrite
   - transform_response
   - cache_redis
-  - prometheus  # Enable the Prometheus plugin for metrics collection
-  - api_chainer_v2
+  - AES-256
+  # - prometheus  # Enable the Prometheus plugin for metrics collection
+  # - api_chainer_v2
   

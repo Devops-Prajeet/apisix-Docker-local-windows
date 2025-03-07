@@ -17,7 +17,7 @@ local schema = {
 
 local _M = {
     version = 1.0,
-    priority = 1000,  -- Ensures this plugin runs before others
+    priority = 1200,  -- Ensures this plugin runs before others
     name = plugin_name,
     schema = schema
 }
@@ -38,10 +38,10 @@ local function get_consumer_by_key(api_key)
 
     local consumers, decode_err = core.json.decode(res.body)
 
-    if consumers then
-        core.log.warn("Failed to decode JSON response: ", core.json.encode(consumers['list']))
-        -- return nil
-    end
+    -- if consumers then
+    --     core.log.warn("Failed to decode JSON response: ", core.json.encode(consumers['list']))
+    --     -- return nil
+    -- end
 
     
     -- core.log.warn("Unexpected response format from APISIX Admin API",type(res.body))
