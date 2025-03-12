@@ -30,10 +30,14 @@ local function get_timestamp()
     return formatted_time
 end
 
-
+function _M.access(conf, ctx)
+    ngx.req.read_body()
+    ngx.ctx.buffered_response = true
+end
 -- Header modification block: Reset content-length
 function _M.header_filter(conf, ctx)
     ngx.header.content_length = nil
+    
 end
 
  
@@ -77,9 +81,9 @@ local billable_dict = {
     [401] = { BILLABLE = "False", MESSAGE = "Unauthorized" }
 }
 
-local success_status_code = {1,200}
-local invalid_missing_status_code = {401,301,3}
-local no_record_found_status_code = {2,4}
+local success_status_code = {1,200,101}
+local invalid_missing_status_code = {401,301,3,102}
+local no_record_found_status_code = {2,4,103}
 
 -- Function to check if value exists in a table
 local function is_in_list(value, list)
@@ -121,12 +125,12 @@ function _M.body_filter(conf, ctx)
         local new_json = json.new()
         new_json.encode_sparse_array(true, 1, 1)
         local data,err = new_json.decode(full_body)
-        if not data then
-            core.log.warn("JSON decoding failed:dfsdfsdfsdfsdfsdf ", full_body)
+        if data then
+            core.log.warn("JSON decoding after everythigs", new_json.encode(data),new_json.encode(err))
             -- return
         end
         
-        local sourceMessage = data['message']
+        -- local sourceMessage = data and  data['message'] or data['response_message']
         local result = { }
         if ngx.status == 401 then
             result["response_code"] = 401
@@ -136,6 +140,7 @@ function _M.body_filter(conf, ctx)
             -- Set modified response and terminate further chunk processing
             ngx.arg[1] = new_bodys
             ngx.arg[2] = true
+            
             return
             
         elseif ngx.status == 403 then 
@@ -153,13 +158,23 @@ function _M.body_filter(conf, ctx)
 
         local request_body = ngx.req.get_body_data()
         local input_data = request_body and pcall(json.decode, request_body) and json.decode(request_body) or {}
+
+        if input_data["consent_text"] ~= nil then
+            input_data["consent_text"] = nil
+        end
+
+        if input_data["consent"] ~= nil then
+            input_data["consent"] = nil
+        end
         result["input"] = input_data
 
         -- Generate and add a unique transaction ID
         result["transaction_id"] = generate_transaction_id()
-
+        
+        
         -- Get HTTP status from the response
-        local http_status = tonumber(data.status)  -- Get the HTTP status code from Nginx
+        -- core.log.warn("Updated response body for everythings: tranform lua and scirpt ", core.json.encode(data))
+        local http_status = tonumber(data.status)   -- Get the HTTP status code from Nginx
         
         -- Map source HTTP status to response code
 
@@ -167,6 +182,7 @@ function _M.body_filter(conf, ctx)
             result["response_code"] = 101
         elseif is_in_list(http_status, invalid_missing_status_code) then
             result["response_code"] = 102
+          
         elseif is_in_list(http_status, no_record_found_status_code) then
             result["response_code"] = 103
         else  
@@ -188,15 +204,15 @@ function _M.body_filter(conf, ctx)
         result['response_message'] = billable_info.MESSAGE
         result["request_timestamp"] = ngx.ctx.request_timestamp  
         result["response_timestamp"] = get_timestamp()
-        result['result'] = data and data.result or ""
+        result['result'] = data and data.result or  data.msg or {}
         
         -- Encode modified response
         local new_body = new_json.encode(result)
         -- Set modified response and terminate further chunk processing
         ngx.arg[1] = new_body
         ngx.arg[2] = true
+        
     end
 end
-
 
 return _M

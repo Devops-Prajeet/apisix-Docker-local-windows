@@ -43,7 +43,7 @@ end
 
 --     -- If there is no request body, return an error
 --     if not body then
---         return 400, { message = "Request body is missing" }
+--         r  eturn 400, { message = "Request body is missing" }
 --     end
 
 --     local ok, json_body = pcall(json.decode, body)

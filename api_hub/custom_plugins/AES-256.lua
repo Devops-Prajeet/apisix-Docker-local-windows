@@ -105,14 +105,14 @@ function _M.check_body(ctx, required_key_1, required_key_2,json_body)
 
     local json_body = json_body
     -- Check for the first required key in the body
-    if not json_body[required_key_1] then
-        return 400, { status =  "102" }
-    end
+    -- if not json_body[required_key_1] then
+    --     return 400, { status =  "102" }
+    -- end
 
-    -- Check for the second required key in the body
-    if not json_body[required_key_2] then
-        return 400, { status =  "102" }
-    end
+    -- -- Check for the second required key in the body
+    -- if not json_body[required_key_2] then
+    --     return 400, { status =  "102" }
+    -- end
 
     local pan = json_body[required_key_1]
     if not isValidPAN(pan) then

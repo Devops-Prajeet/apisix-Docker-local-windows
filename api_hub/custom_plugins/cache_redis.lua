@@ -9,7 +9,7 @@ local schema = {
     type = "object",
     properties = {
         redis_host = { type = "string", default = "13.203.59.217" },
-        redis_port = { type = "integer", default = 6378 },
+        redis_port = { type = "integer", default = 6379 },
         redis_key_prefix = { type = "string", default = "apisix:response:" },
         redis_ttl = { type = "integer", default = 86400 } -- Cache TTL (24 hours)
     }
@@ -22,6 +22,14 @@ local _M = {
     schema = schema
 }
 
+
+function _M.header_filter(conf, ctx)
+    ngx.header.content_length = nil
+    core.log.warn("JSON decoding override status  cahce redis", ngx.ctx.override_status)
+    if ngx.ctx.override_status then
+        ngx.status = ngx.ctx.override_status
+    end
+end
 -- ✅ Helper function to ensure default values
 local function get_config_value(value, default)
     return value ~= nil and value or default
@@ -29,7 +37,7 @@ end
 
 local function get_consumer_by_key(api_key)
     local httpc = http.new()
-    local res, err = httpc:request_uri("http://49.205.172.103:9180/apisix/admin/consumers", {
+    local res, err = httpc:request_uri("http://127.0.0.1:9180/apisix/admin/consumers", {
         method = "GET",
         headers = {
             ["X-API-KEY"] = "edd1c9f034335f136f87ad84b625c8f1"
@@ -65,7 +73,7 @@ end
 function _M.access(conf, ctx)
     -- ✅ Ensure default values are set
     local redis_host = get_config_value(conf.redis_host, "13.203.59.217")
-    local redis_port = get_config_value(conf.redis_port, 6378)
+    local redis_port = get_config_value(conf.redis_port, 6379)
     local redis_key_prefix = get_config_value(conf.redis_key_prefix, "apisix:response:")
 
     local redis_client = redis:new()
@@ -196,7 +204,7 @@ function _M.log(conf, ctx)
 
     -- ✅ Ensure default values are set
     local redis_host = get_config_value(conf.redis_host, "13.203.59.217")
-    local redis_port = get_config_value(conf.redis_port, 6378)
+    local redis_port = get_config_value(conf.redis_port, 6379)
     local redis_ttl = get_config_value(conf.redis_ttl, 86400) -- Default 10 min TTL
 
     -- ✅ Use a timer to perform Redis write asynchronously
