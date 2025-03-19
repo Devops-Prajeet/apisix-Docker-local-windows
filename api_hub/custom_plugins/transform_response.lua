@@ -82,7 +82,7 @@ local billable_dict = {
 }
 
 local success_status_code = {1,200,101}
-local invalid_missing_status_code = {401,301,3,102}
+local invalid_missing_status_code = {401,301,3,102,422}
 local no_record_found_status_code = {2,4,103}
 
 -- Function to check if value exists in a table
@@ -205,9 +205,16 @@ function _M.body_filter(conf, ctx)
         result["request_timestamp"] = ngx.ctx.request_timestamp  
         result["response_timestamp"] = get_timestamp()
         result['result'] = data and data.result or  data.msg or {}
+       
+        
+        if type(result['result']) == "string" then
+            result["result"] = "" 
+        end
         
         -- Encode modified response
         local new_body = new_json.encode(result)
+        
+
         -- Set modified response and terminate further chunk processing
         ngx.arg[1] = new_body
         ngx.arg[2] = true
