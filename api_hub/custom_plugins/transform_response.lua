@@ -94,8 +94,14 @@ local function is_in_list(value, list)
     end
     return false
 end
--- local source_unavaible_status_code = [1]
 
+-- -- local source_unavaible_status_code = [1]
+-- local function to_hex(str)
+
+--     return (str:gsub('.', function(c)
+--         return string.format('%02X', string.byte(c))
+--     end))
+-- end
 
 -- Capture request start time
 function _M.access(conf, ctx)
@@ -174,6 +180,7 @@ function _M.body_filter(conf, ctx)
         
         -- Get HTTP status from the response
         -- core.log.warn("Updated response body for everythings: tranform lua and scirpt ", core.json.encode(data))
+        core.log.warn("data .status kdfjkd ", new_json.encode(data))
         local http_status = tonumber(data.status)   -- Get the HTTP status code from Nginx
         
         -- Map source HTTP status to response code
@@ -210,11 +217,15 @@ function _M.body_filter(conf, ctx)
         if type(result['result']) == "string" then
             result["result"] = "" 
         end
-        
-        -- Encode modified response
-        local new_body = new_json.encode(result)
-        
 
+        -- Check for a specific key in the request headers
+        ctx.var.isBulk = "API"
+        local header_key = "trx_type" -- Replace with the desired header key
+        if ngx.req.get_headers()[header_key] then
+            ctx.var.isBulk = ngx.req.get_headers()[header_key]
+        end
+        
+        local new_body = new_json.encode(result)
         -- Set modified response and terminate further chunk processing
         ngx.arg[1] = new_body
         ngx.arg[2] = true

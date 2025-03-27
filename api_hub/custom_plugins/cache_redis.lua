@@ -8,7 +8,7 @@ local plugin_name = "cache_redis"
 local schema = {
     type = "object",
     properties = {
-        redis_host = { type = "string", default = "13.203.59.217" },
+        redis_host = { type = "string", default = "127.0.0.1" },
         redis_port = { type = "integer", default = 6379 },
         redis_key_prefix = { type = "string", default = "apisix:response:" },
         redis_ttl = { type = "integer", default = 86400 } -- Cache TTL (24 hours)
@@ -72,7 +72,7 @@ end
 -- 🔹 Access Phase: Check Redis Cache Before Forwarding Request
 function _M.access(conf, ctx)
     -- ✅ Ensure default values are set
-    local redis_host = get_config_value(conf.redis_host, "13.203.59.217")
+    local redis_host = get_config_value(conf.redis_host, "127.0.0.1")
     local redis_port = get_config_value(conf.redis_port, 6379)
     local redis_key_prefix = get_config_value(conf.redis_key_prefix, "apisix:response:")
 
@@ -85,6 +85,7 @@ function _M.access(conf, ctx)
         core.log.error("Failed to connect to Redis: ", err)
         return
     end
+    redis_client:select(2)
     
     local headers = ngx.req.get_headers()
     ctx.var.apiKey = headers['api-key']
@@ -162,6 +163,8 @@ local function store_in_redis(premature, redis_host, redis_port, key, response_b
         core.log.error("Failed to connect to Redis in timer: ", err)
         return
     end
+
+    redis_client:select(2)
      
      
     -- core.log.warn("Stored response in Redis for klocal actual_body = ctx.var.upstream_response_bodyey: ", response_body.actual )
@@ -187,9 +190,9 @@ local function store_in_redis(premature, redis_host, redis_port, key, response_b
     local dataForRedis = cjson.encode(data)
     local success, redis_err = redis_client:setex(key, redis_ttl, dataForRedis)
     if not success then
-        core.log.error("Failed to store response in Redis: ", redis_err)
+        core.log.warn("Failed to store response in Redis: ", redis_err)
     else
-        core.log.info("Stored response in Redis for key: ", key)
+        core.log.warn("Stored response in Redis for key: ", key)
     end
 
     -- Close Redis connection
@@ -203,12 +206,12 @@ function _M.log(conf, ctx)
     end
 
     -- ✅ Ensure default values are set
-    local redis_host = get_config_value(conf.redis_host, "13.203.59.217")
+    local redis_host = get_config_value(conf.redis_host, "127.0.0.1")
     local redis_port = get_config_value(conf.redis_port, 6379)
     local redis_ttl = get_config_value(conf.redis_ttl, 86400) -- Default 10 min TTL
 
     -- ✅ Use a timer to perform Redis write asynchronously
-    local ok, err = ngx.timer.at(0, store_in_redis, redis_host, redis_port, ctx.cache_redis_key, ctx.cache_response_body, redis_ttl)
+    local ok, err = ngx.timer.at(2, store_in_redis, redis_host, redis_port, ctx.cache_redis_key, ctx.cache_response_body, redis_ttl)
     if not ok then
         core.log.error("Failed to create async Redis timer: ", err)
     end
