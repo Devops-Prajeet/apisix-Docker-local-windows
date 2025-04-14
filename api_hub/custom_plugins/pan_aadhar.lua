@@ -162,8 +162,7 @@ function _M.body_filter(conf, ctx)
             local last_four_digits = request_data and request_data.aadhaar
     
             if not last_four_digits or #last_four_digits ~= 4 then
-                core.log.error("Invalid last four digits of Aadhaar in request body")
-                return
+                return 400, { message = "Invalid last four digits of Aadhaar in request body",status = "102"}
             end
     
             -- Masked Aadhaar usually follows a format like "XXXX-XXXX-1234"

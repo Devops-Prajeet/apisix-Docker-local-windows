@@ -140,7 +140,8 @@ function _M.body_filter(conf, ctx)
         tranform = res_body,
         api_id = route,
         apiKey = ctx.var.apiKey,
-        username = ctx.var.consumer
+        username = ctx.var.consumer ,
+        isBulk = ctx.var.isBulk
     }
     
     
@@ -183,7 +184,8 @@ local function store_in_redis(premature, redis_host, redis_port, key, response_b
 
     local data = {
         actualResponse = actualData,
-        transformResponse = transformData
+        transformResponse = transformData,
+        isBulk = response_body.isBulk
     }  
 
     -- Store response in Redis with TTL
@@ -211,7 +213,7 @@ function _M.log(conf, ctx)
     local redis_ttl = get_config_value(conf.redis_ttl, 86400) -- Default 10 min TTL
 
     -- ✅ Use a timer to perform Redis write asynchronously
-    local ok, err = ngx.timer.at(2, store_in_redis, redis_host, redis_port, ctx.cache_redis_key, ctx.cache_response_body, redis_ttl)
+    local ok, err = ngx.timer.at(0, store_in_redis, redis_host, redis_port, ctx.cache_redis_key, ctx.cache_response_body, redis_ttl)
     if not ok then
         core.log.error("Failed to create async Redis timer: ", err)
     end

@@ -1,7 +1,13 @@
 local core = require("apisix.core")
-local aes = require("resty.aes")
+ 
 local str = require("resty.string")
-local json = require("cjson.safe")
+ 
+local cjson = require "cjson.safe"
+local resty_random = require "resty.random"
+local cipher_lib = require("resty.openssl.cipher")
+local base64_encode = ngx.encode_base64
+local base64_decode = ngx.decode_base64
+
 -- local regex = require('regex')
 local ngx = ngx
 local resty_random = require("resty.random")
@@ -25,7 +31,7 @@ _M.schema = {
             type = "string",
             minLength = 32,
             maxLength = 32,
-            description = "AES-256 encryption key (must be 32 characters)"
+            description = "AES-256 encryption key (GCM MODE) (must be 32 characters)"
         }
     },
     required = {"aes_key"}  -- AES key is required while applying plugin
@@ -33,55 +39,47 @@ _M.schema = {
 
 -- Helper function to decrypt data
 local function decrypt_data(aes_key, encrypted_data)
-    local encrypted_data_bytes = ngx.decode_base64(encrypted_data)
-    if not encrypted_data_bytes then
-        core.log.error("Base64 decoding failed")
-        return nil, "Base64 decoding failed"
-    end
+    local encrypted_raw = assert(base64_decode(encrypted_data ))
 
-    local iv = encrypted_data_bytes:sub(1, 16)
-    local ciphertext = encrypted_data_bytes:sub(17)
+    -- Extract iv, ciphertext, and tag
+    local iv_dec = encrypted_raw:sub(1, 12)
+    local tag_dec = encrypted_raw:sub(-16)
+    local ciphertext_dec = encrypted_raw:sub(13, -17)
 
-    if #aes_key ~= 32 then
-        return nil, "Invalid AES key length. Expected 32 bytes."
-    end
+    -- Init cipher for decryption
+    local cipher_dec = assert(cipher_lib.new("aes-256-gcm"))
+    assert(cipher_dec:init(aes_key, iv_dec, { is_encrypt = false }))
 
-    if #iv ~= 16 then
-        return nil, "Invalid IV length. Expected 16 bytes."
-    end
+    -- Set GCM tag (must be before final)
+    assert(cipher_dec:set_aead_tag(tag_dec))
 
-    local aes_instance = aes:new(aes_key, nil, aes.cipher(256, "cbc"), { iv = iv })
-    if not aes_instance then
-        return nil, "Failed to create AES instance"
-    end
-
-    local decrypted_data = aes_instance:decrypt(ciphertext)
-    if not decrypted_data then
-        return nil, "Decryption failed"
-    end
-
+    -- Decrypt
+    local decrypted_data = assert(cipher_dec:update(ciphertext_dec))
+    decrypted_data = decrypted_data .. assert(cipher_dec:final())
     return decrypted_data, nil
 end
 
 -- Helper function to encrypt data
 local function encrypt_data(aes_key, plaintext_data)
-    local iv = resty_random.bytes(16)
-    if not iv then
-        return nil, "Failed to generate IV"
-    end
+        local iv = assert(resty_random.bytes(12))
+        local json_data = cjson.encode(plaintext_data)
 
-    local aes_instance = aes:new(aes_key, nil, aes.cipher(256, "cbc"), { iv = iv })
-    if not aes_instance then
-        return nil, "Failed to create AES instance"
-    end
+        -- === ENCRYPTION ===
+        local cipher = assert(cipher_lib.new("aes-256-gcm"))
+        assert(cipher:init(aes_key, iv, { is_encrypt = true }))
 
-    local ciphertext = aes_instance:encrypt(plaintext_data)
-    if not ciphertext then
-        return nil, "Encryption failed"
-    end
+        -- Encrypt data
+        local ciphertext = assert(cipher:update(json_data))
+        ciphertext = ciphertext .. assert(cipher:final())
 
-    local encrypted_data = ngx.encode_base64(iv .. ciphertext)
-    return encrypted_data, nil
+        -- Get GCM tag (16 bytes)
+        local tag = assert(cipher:get_aead_tag(16))
+
+        local encrypted = iv .. ciphertext .. tag
+        local encrypted_b64 = base64_encode(encrypted)
+
+        return encrypted_b64, nil
+    
 end
 
 function isValidPAN(pan)
@@ -93,35 +91,28 @@ function isValidPAN(pan)
     end
 end
 
-function _M.check_body(ctx, required_key_1, required_key_2,json_body)
-    -- ngx.req.read_body()
-    -- local body = ngx.req.get_body_data()
-     
-
+function _M.check_body(ctx, required_key_1, required_key_2, json_body)
     -- If there is no request body, return an error
     if not json_body then
-        return 400, { message = "Request body is missing" }
+        return core.response.exit(400, { message = "Request body is missing" })
     end
 
-    local json_body = json_body
     -- Check for the first required key in the body
-    -- if not json_body[required_key_1] then
-    --     return 400, { status =  "102" }
-    -- end
+    if not json_body[required_key_1] then
+        return core.response.exit(400, { status = "102", message = required_key_1 .. " is missing" })
+    end
 
-    -- -- Check for the second required key in the body
-    -- if not json_body[required_key_2] then
-    --     return 400, { status =  "102" }
-    -- end
+    -- Check for the second required key in the body
+    if not json_body[required_key_2] then
+        return core.response.exit(400, { status = "102", message = required_key_2 .. " is missing" })
+    end
 
     local pan = json_body[required_key_1]
     if not isValidPAN(pan) then
-        return 400, { status =  "3" }
+        return core.response.exit(400, { status = "3", message = "Invalid PAN" })
     end
 
-
-
-    -- If both keys exist, allow the request to continue
+    -- If both keys exist and PAN is valid, allow the request to continue
     return 200
 end
 
@@ -134,7 +125,7 @@ function _M.access(conf, ctx)
         return core.response.exit(400, { error = "Invalid request body" })
     end
 
-    local body, err = json.decode(raw_body)
+    local body, err = cjson.decode(raw_body)
     if not body or not body.encryptedReq then
         return core.response.exit(400, { error = "Invalid request body format" })
     end
@@ -147,22 +138,22 @@ function _M.access(conf, ctx)
         return core.response.exit(400, { error = err })
     end
 
-    local json_data, err = json.decode(decrypted_data)
+    local json_data, err = cjson.decode(decrypted_data)
     if not json_data then
-        core.log.warn("Starting decryption process...",json.encode(json_data))
+        core.log.warn("Starting decryption process...",cjson.encode(json_data))
         return core.response.exit(400, { error = err })
     end
 
     local required_key_1 = "pan"
     local required_key_2 = "aadhaar"
-
+    ctx.var.decryptData =  json_data 
 --     -- Check the request body for both keys
-    local status, responses = _M.check_body(ctx, required_key_1, required_key_2,json_data)
+    -- local status, responses = _M.check_body(ctx, required_key_1, required_key_2,json_data)
 
     
 
     -- Set the decrypted JSON as the new request body
-    ngx.req.set_body_data(json.encode(json_data))
+    ngx.req.set_body_data(cjson.encode(json_data))
 
     if status ~= 200 then
         -- core.log.warn("things not working perfeclty",status,responses)
@@ -196,7 +187,7 @@ function _M.body_filter(conf, ctx)
  
         }  
 
-        local finalResponse = json.encode(responseData)
+        local finalResponse = cjson.encode(responseData)
 
         ngx.arg[1] = finalResponse
     end
