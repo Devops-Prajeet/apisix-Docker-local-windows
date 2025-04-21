@@ -200,21 +200,21 @@ function _M.body_filter(conf, ctx)
 
         local billable_info = billable_dict[result["response_code"]] or { BILLABLE = "False", MESSAGE = "Unknown Response Code" }
 
-        result['billable'] = billable_info.BILLABLE
+        result["billable"] = billable_info.BILLABLE
 
         if billable_info.BILLABLE == "True" then
-            result['success'] = "True"
+            result["success"] = "True"
         else 
-            result['success'] = "False"
+            result["success"] = "False"
         end
 
-        result['response_message'] = billable_info.MESSAGE
+        result["response_message"] = billable_info.MESSAGE
         result["request_timestamp"] = ngx.ctx.request_timestamp  
         result["response_timestamp"] = get_timestamp()
-        result['result'] = data and data.result or  data.msg or {}
+        result["result"] = data and data.result or  data.msg or {}
        
         
-        if type(result['result']) == "string" then
+        if type(result["result"]) == "string" then
             result["result"] = "" 
         end
 

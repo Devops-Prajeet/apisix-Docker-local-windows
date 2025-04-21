@@ -130,7 +130,7 @@ function _M.body_filter(conf, ctx)
         -- end
         
         -- Get the masked Aadhaar number from the response
-        local masked_aadhaar = data.result and data.result.aadhaar
+        local masked_aadhaar = data.result and data.result.aadhaar_number
 
         local notResult = data.result or ""
 
@@ -146,7 +146,7 @@ function _M.body_filter(conf, ctx)
 
         -- if is_blank(notResult) then
         --    result['pan_adhr_link_status'] = "NOT FOUND"
-
+        
         local statusCode = tonumber(data.response_code)
         if  statusCode == 102 then
             result['pan_adhr_link_status'] = "INVALID PAN"
