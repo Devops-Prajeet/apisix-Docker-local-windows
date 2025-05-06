@@ -44,7 +44,7 @@ deployment:
   #   timeout: 30 
   etcd:
     host:                        # It's possible to define multiple etcd hosts addresses of the same etcd cluster.
-      - "http://49.205.172.103:2379"        # Multiple etcd address
+      - "http://13.126.229.173:2379"        # Multiple etcd address
     prefix: "/apisix"            # APISIX configurations prefix
     timeout: 30  
 
@@ -72,12 +72,12 @@ plugin_attr:
           - route_name: $route_name
           - client_ip: $remote_addr  
   redis_cache:
-    redis_host: "13.202.148.227"
+    redis_host: "redis"
     redis_port: 6379
     redis_password: ""
     redis_db: 0
     cache_ttl: 6
-  global_rules:
+    global_rules:
     enable: true
     
 nginx_config:
@@ -86,17 +86,46 @@ nginx_config:
 
 
 plugins:
-  
+
+
   - multi-auth
   - key-auth
   - basic-auth
-  - sanay
+  - key
+  # - sanay
   - pan_aadhar
-  - consumer-restriction
+  # - consumer-restriction
   - proxy-rewrite
   - transform_response
   - cache_redis
-  - AES-256
-  # - prometheus  # Enable the Prometheus plugin for metrics collection
-  # - api_chainer_v2
+  # - AES-256
+  - body-transformer
+  - pan_aadhar
+  - proxy-rewrite
+  - AES_256_GCM
+  - credit_bureau
+  - mobile_revoke_validate
+  - sort_transform_response
+  - body_transform_custom
+  - pan_tan_to_tds
+  - pan_validator
+  - tds_verification
+  - financial_year_validator
+  - tan_validator
+  - pan_validator_true_billable
+  - tds_amount_certi_validator
+
+  
+  # - multi-auth
+  # - key-auth
+  # # - basic-auth
+
+  # # - pan_aadhar
+  # # - consumer-restriction
+  # - proxy-rewrite
+  # - transform_response
+  # - cache_redis
+  # # - AES-256
+  # # - prometheus  # Enable the Prometheus plugin for metrics collection
+  # # - api_chainer_v2
   

@@ -111,8 +111,6 @@ function _M.body_filter(conf, ctx)
         new_json.encode_sparse_array(true, 1, 1)
         local data, err = new_json.decode(full_body)
 
-
-        
         if err then
             core.log.error("Failed to decode response body: ", err)
             return
@@ -148,14 +146,25 @@ function _M.body_filter(conf, ctx)
         --    result['pan_adhr_link_status'] = "NOT FOUND"
         
         local statusCode = tonumber(data.response_code)
+
         if  statusCode == 102 then
-            result['pan_adhr_link_status'] = "INVALID PAN"
+            data["billable"]="True"
+            data["success"]="True"
+            if ngx.status == 200 then
+                data["response_message"]="Success"
+                data["response_code"]=101
+                result['pan_adhr_link_status'] = "NOT SEEDED"
+            else
+                data["response_code"]=102
+                data["response_message"]="Invalid ID number or combination of inputs"
+                result['pan_adhr_link_status'] = "INVALID PAN"
+            end
         elseif  statusCode == 103 then
             result['pan_adhr_link_status'] = "NULL"
         elseif  statusCode == 110 then
             result['pan_adhr_link_status'] = "ERROR"
-        elseif is_blank(masked_aadhaar) then
-            result['pan_adhr_link_status'] = "NOT SEEDED"
+        elseif statusCode == 401 then
+            result  = nil
         else
             local request_body = ngx.req.get_body_data()
             local request_data = json.decode(request_body)

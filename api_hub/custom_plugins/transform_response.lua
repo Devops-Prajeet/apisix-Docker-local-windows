@@ -108,6 +108,9 @@ function _M.access(conf, ctx)
     ngx.ctx.request_timestamp = get_timestamp()-- Store request time in seconds
 end
 
+
+
+
 function _M.body_filter(conf, ctx)
     local chunk, eof = ngx.arg[1], ngx.arg[2] 
 
@@ -159,6 +162,17 @@ function _M.body_filter(conf, ctx)
             ngx.arg[2] = true
             return
 
+         elseif ngx.status == 429 then 
+            result["response_code"] = 429
+            result["response_message"] = "Limit exceeds , Too many requests"
+            local new_bodys = new_json.encode(result)
+            --core.log.warn("DATA---------------------------------------------------------",new_bodys)
+        
+            -- Set modified response and terminate further chunk processing
+            ngx.arg[1] = new_bodys
+            ngx.arg[2] = true
+            return
+
         end
 
 
@@ -179,10 +193,8 @@ function _M.body_filter(conf, ctx)
         
         
         -- Get HTTP status from the response
-        -- core.log.warn("Updated response body for everythings: tranform lua and scirpt ", core.json.encode(data))
-        core.log.warn("data .status kdfjkd ", new_json.encode(data))
-        local http_status = tonumber(data.status)   -- Get the HTTP status code from Nginx
-        
+        local statusCode = data and data.status or  data.result_code
+        local http_status = tonumber(statusCode) 
         -- Map source HTTP status to response code
 
         if is_in_list(http_status, success_status_code) then
@@ -220,9 +232,11 @@ function _M.body_filter(conf, ctx)
 
         -- Check for a specific key in the request headers
         ctx.var.isBulk = "API"
-        local header_key = "trx_type" -- Replace with the desired header key
+        local header_key = "x-trx-type" -- Replace with the desired header key
+ --       core.log.warn("data bulk", new_json.encode(ngx.req.get_headers()))
         if ngx.req.get_headers()[header_key] then
             ctx.var.isBulk = ngx.req.get_headers()[header_key]
+--            core.log.warn("data bulk", new_json.encode(ctx.var.isBulk))
         end
         
         local new_body = new_json.encode(result)
