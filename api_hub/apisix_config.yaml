@@ -114,6 +114,7 @@ plugins:
   - tan_validator
   - pan_validator_true_billable
   - tds_amount_certi_validator
+  - pan_advance_v1
 
   
   # - multi-auth

@@ -21,6 +21,10 @@ function _M.check_schema(conf)
     return core.schema.check(schema, conf)
 end
 
+
+
+
+
 function _M.access(conf, ctx)
     local req_body, err = core.request.get_body()
     if not req_body then
@@ -28,6 +32,8 @@ function _M.access(conf, ctx)
     end
 
     local data, err = json.decode(req_body)
+
+    core.log.warn("anilkumar yadav ji...........", data)
     if not data then
         return 400, { message = "Invalid JSON format", status = "102" }
     end
