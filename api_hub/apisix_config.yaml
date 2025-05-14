@@ -93,7 +93,7 @@ plugins:
   - basic-auth
   - key
   # - sanay
-  - pan_aadhar
+  # - pan_aadhar
   # - consumer-restriction
   - proxy-rewrite
   - transform_response
@@ -115,6 +115,10 @@ plugins:
   - pan_validator_true_billable
   - tds_amount_certi_validator
   - pan_advance_v1
+  - uan_passbook_otp_gen
+  - uan_passbook_result
+  - pan_aadhar_v2
+  - panmaskaadhaar_enc
 
   
   # - multi-auth

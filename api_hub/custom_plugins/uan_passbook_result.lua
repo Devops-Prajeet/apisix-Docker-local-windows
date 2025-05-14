@@ -5,7 +5,7 @@ local str = require("resty.string")
 local resty_sha256 = require("resty.sha256")
 local ngx = ngx
 
-local plugin_name = "pan_advance_v1"
+local plugin_name = "uan_passbook_result"
 
 local schema = { type = "object", properties = {} }
 
@@ -49,8 +49,8 @@ end
 
 local billable_dict = {
     [1] = { BILLABLE = "True", MESSAGE = "Success" },   
+    -- [2] = { code = 103, billable = "True", message = "Invalid ID number or combination of inputs" },
     [2] = { code = 103, billable = "True", message = "Invalid ID number or combination of inputs" },
-    [3] = { code = 103, billable = "True", message = "Invalid ID number or combination of inputs" },
 
     [101] = { BILLABLE = "True", MESSAGE = "Success" },
     [102] = { BILLABLE = "False", MESSAGE = "Invalid ID number or combination of inputs" },
@@ -72,8 +72,8 @@ local billable_dict = {
 
 local success_status_code = {1, 200, 101}
 local invalid_missing_status_code = {102, 422}
-local source_down_status = {401, 402, 403, 301, 302}
-local no_record_found_status_code = {2, 3}
+local source_down_status = {401,7 , 402, 403, 301, 302}
+local no_record_found_status_code = {2}
 
 function _M.access(conf, ctx)
     ngx.ctx.request_timestamp = get_timestamp()
@@ -154,6 +154,8 @@ function _M.body_filter(conf, ctx)
         local new_json = json.new()
         new_json.encode_sparse_array(true, 1, 1)
         local data, err = new_json.decode(full_body)
+        
+       
 
         local result = {}
 
@@ -210,86 +212,24 @@ function _M.body_filter(conf, ctx)
         result["request_timestamp"] = ngx.ctx.request_timestamp  
         result["response_timestamp"] = get_timestamp()
 
-        -- Rename specific result fields
-      local transformed_result = {}
 
--- Check response_code
-        if data and result.response_code == 101 then
-            local original_result = data.result or data.msg or {}
-            if type(original_result) ~= "table" then
-                original_result = {}
-            end
-
-            -- Mapping of old keys to new keys
-            local field_map = {
-                aadhaar = "AADHAAR_NUMBER",
-                aadharlink = "AADHAAR_LINKAGE",
-                category = "PAN_TYPE",
-                dob = "DOB",
-                email = "EMAIL",
-                first_name = "FIRST_NAME",
-                full_name = "FULLNAME",
-                gender = "GENDER",
-                last_name = "LAST_NAME",
-                middle_name = "MIDDLE_NAME",
-                mobile = "MOBILE",
-                pan = "PAN"
-                -- tax is intentionally excluded
-            }
-
-            -- Apply mapped keys
-            for old_key, new_key in pairs(field_map) do
-                local value = original_result[old_key]
-                if value ~= nil then
-                    transformed_result[new_key] = value
-                else
-                    transformed_result[new_key] = "N/A"
-                end
-            end
-
-            -- Handle address or address_detalis separately
-            local address_data = original_result["ADDRESS"] or original_result["address"] or original_result["address_detalis"]
-            if type(address_data) == "table" then
-                local new_address = {}
-                for addr_k, addr_v in pairs(address_data) do
-                    if addr_k == "address_line_1" then
-                        new_address["ADDRESS_LINE_1"] = addr_v
-                    elseif addr_k == "address_line_2" then
-                        new_address["ADDRESS_LINE_2"] = addr_v
-                    elseif addr_k == "address_line_3" then
-                        new_address["ADDRESS_LINE_3"] = addr_v
-                    elseif addr_k == "address_line_4" then
-                        new_address["ADDRESS_LINE_4"] = addr_v
-                    elseif addr_k == "address_line_5" then
-                        new_address["ADDRESS_LINE_5"] = addr_v
-                    elseif addr_k == "pin_code" then
-                        new_address["PIN_CODE"] = addr_v
-                    elseif addr_k == "state" then
-                        new_address["STATE"] = addr_v
-                    else
-                        new_address[addr_k] = addr_v
-                    end
-                end
-                transformed_result["ADDRESS"] = new_address
-            else
-                transformed_result["ADDRESS"] = {
-                    ADDRESS_LINE_1 = "N/A",
-                    ADDRESS_LINE_2 = "N/A",
-                    ADDRESS_LINE_3 = "N/A",
-                    ADDRESS_LINE_4 = "N/A",
-                    ADDRESS_LINE_5 = "N/A",
-                    PIN_CODE = "N/A",
-                    STATE = "N/A"
-                }
-            end
-
-        else
-            -- Response code is not 101
-            transformed_result = {}
+        result["result"] = data and data.result or  data.msg or {}
+       
+        
+        if type(result["result"]) == "string" then
+            result["result"] = "" 
         end
 
-        -- Final result
-        result["result"] = transformed_result
+
+        if data and result.response_code == 103 then
+            if type(data.message) == "string"
+               and data.message:find("Digital Payment Id Inactive", 1, true)
+            then
+                result.response_message = "Digital Payment Id Inactive"
+            else
+                result.response_message = "No records found for the given ID or combination of inputs"
+            end
+        end
 
 
         ctx.var.isBulk = "API"
