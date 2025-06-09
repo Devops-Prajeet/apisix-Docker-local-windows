@@ -187,7 +187,7 @@ local function transform(conf, body, typ, ctx, request_method)
 
     -- ✅ Disable HTML escaping in templates
     -- template.escape = nil  -- ✅ Disable auto escaping
-    -- template.escape = function(s) return s end
+    template.escape = function(s) return s end
     local new_json = json.new()
     new_json.encode_sparse_array(true, 1, 1)
 

@@ -50,7 +50,7 @@ end
 local billable_dict = {
     [1] = { BILLABLE = "True", MESSAGE = "Success" },   
     -- [2] = { code = 103, billable = "True", message = "Invalid ID number or combination of inputs" },
-    [2] = { code = 103, billable = "True", message = "Invalid ID number or combination of inputs" },
+    [2] = { code = 102, billable = "False", message = "Invalid OTP" },
 
     [101] = { BILLABLE = "True", MESSAGE = "Success" },
     [102] = { BILLABLE = "False", MESSAGE = "Invalid ID number or combination of inputs" },
@@ -135,29 +135,134 @@ local key_order = {
     "response_timestamp"
 }
 
-function _M.body_filter(conf, ctx)
-    local chunk, eof = ngx.arg[1], ngx.arg[2] 
+-- function _M.body_filter(conf, ctx)
+--     local chunk, eof = ngx.arg[1], ngx.arg[2] 
 
+--     if not ngx.ctx.response_body then
+--         ngx.ctx.response_body = {}
+--     end
+
+--     if chunk and chunk ~= "" then
+--         table.insert(ngx.ctx.response_body, chunk)
+--         ngx.arg[1] = nil
+--     end
+
+--     if eof then
+--         local full_body = table.concat(ngx.ctx.response_body)
+--         ctx.var.responseBodyFromSource = full_body
+
+--         local new_json = json.new()
+--         new_json.encode_sparse_array(true, 1, 1)
+
+
+--         -- local data, err = new_json.decode(full_body)
+--         -- local result = {}
+
+--         -- 1) Log raw upstream response for debugging
+--         core.log.error("Raw upstream response (len=", #full_body, "): ", full_body)
+
+--         -- 2) Strip everything before the first “{” and after the last “}”
+--         local s = full_body:find("{")
+--         local e = full_body:match(".*()}")  -- finds last “}”
+--         if s and e and e > s then
+--             full_body = full_body:sub(s, e)
+--         end
+
+--         -- 3) Now decode the sanitized JSON
+--         local data, err = json.decode(full_body)
+--         if not data then
+--             core.log.error("Failed to decode JSON from upstream: ", err or "unknown error")
+--             core.log.error("Sanitized body (len=", #full_body, "): ", full_body)
+
+--             -- fallback response
+--             local result = {
+--                 transaction_id   = generate_transaction_id(),
+--                 input            = {},
+--                 success          = "False",
+--                 billable         = "False",
+--                 response_code    = 110,
+--                 response_message = "Invalid or non-JSON response from upstream",
+--                 result           = "",
+--                 request_timestamp  = ngx.ctx.request_timestamp,
+--                 response_timestamp = get_timestamp(),
+--             }
+--             ngx.arg[1] = sorted_json(result, key_order)
+--             ngx.arg[2] = true
+--             return
+--         end
+--         -- safe from here on: `data` is always a table
+
+function _M.body_filter(conf, ctx)
+    local chunk, eof = ngx.arg[1], ngx.arg[2]
+
+    -- buffer all chunks
     if not ngx.ctx.response_body then
         ngx.ctx.response_body = {}
     end
-
     if chunk and chunk ~= "" then
         table.insert(ngx.ctx.response_body, chunk)
         ngx.arg[1] = nil
     end
 
     if eof then
+        -- 1) Reconstruct raw upstream response
         local full_body = table.concat(ngx.ctx.response_body)
         ctx.var.responseBodyFromSource = full_body
 
-        local new_json = json.new()
-        new_json.encode_sparse_array(true, 1, 1)
-        local data, err = new_json.decode(full_body)
-        
-       
+        -- 2) Log raw for debugging
+        core.log.error("Raw upstream response (len=", #full_body, "): ", full_body)
 
-        local result = {}
+        -- 3) Extract only the first balanced `{...}` block
+        local open, start_pos, end_pos = 0, nil, nil
+        for i = 1, #full_body do
+            local c = full_body:sub(i, i)
+            if c == "{" then
+                if open == 0 then start_pos = i end
+                open = open + 1
+            elseif c == "}" then
+                open = open - 1
+                if open == 0 then
+                    end_pos = i
+                    break
+                end
+            end
+        end
+
+        if start_pos and end_pos then
+            full_body = full_body:sub(start_pos, end_pos)
+        else
+            core.log.error("Could not isolate JSON object; using raw body")
+        end
+
+        -- 4) Decode the sanitized JSON
+        local data, err = json.decode(full_body)
+        if not data then
+            core.log.error("Failed to decode JSON from upstream: ", err or "unknown error")
+            core.log.error("Sanitized body (len=", #full_body, "): ", full_body)
+
+            -- fallback response
+            local result = {
+                transaction_id    = generate_transaction_id(),
+                input             = {},
+                success           = "False",
+                billable          = "False",
+                response_code     = 110,
+                response_message  = "Invalid or non-JSON response from upstream",
+                result            = "",
+                request_timestamp = ngx.ctx.request_timestamp,
+                response_timestamp = get_timestamp(),
+            }
+
+            ngx.arg[1] = sorted_json(result, key_order)
+            ngx.arg[2] = true
+            return
+        end
+
+         local result = {}
+
+
+
+
 
         if ngx.status == 401 then
             result["response_code"] = 401
@@ -191,6 +296,18 @@ function _M.body_filter(conf, ctx)
         local statusCode = data and data.status or data.result_code
         local http_status = tonumber(statusCode)
 
+
+        -- if http_status == 2
+        -- and type(data.message) == "string"
+        -- and data.message:find("Invalid OTP", 1, true)
+        -- then
+        --     result.response_code    = 102
+        --     result.response_message = "Invalid OTP"
+        --     result.billable         = "False"
+        --     result.success          = "False"
+
+        -- else
+
         if is_in_list(http_status, success_status_code) then
             result["response_code"] = 101
         elseif is_in_list(http_status, invalid_missing_status_code) then
@@ -218,17 +335,6 @@ function _M.body_filter(conf, ctx)
         
         if type(result["result"]) == "string" then
             result["result"] = "" 
-        end
-
-
-        if data and result.response_code == 103 then
-            if type(data.message) == "string"
-               and data.message:find("Digital Payment Id Inactive", 1, true)
-            then
-                result.response_message = "Digital Payment Id Inactive"
-            else
-                result.response_message = "No records found for the given ID or combination of inputs"
-            end
         end
 
 

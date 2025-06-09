@@ -59,7 +59,7 @@ function _M.access(conf, ctx)
     local year_value = data[field_name]
 
     if not year_value or not is_valid_financial_year(year_value) then
-        return 200, { message = "Invalid financial year format", status = "103" }
+        return 400, { message = "Invalid financial year format", status = "102" }
     end
 end
 

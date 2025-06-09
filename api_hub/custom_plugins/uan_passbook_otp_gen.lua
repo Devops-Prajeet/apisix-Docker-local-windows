@@ -154,8 +154,16 @@ function _M.body_filter(conf, ctx)
         local new_json = json.new()
         new_json.encode_sparse_array(true, 1, 1)
         local data, err = new_json.decode(full_body)
+        if not data then
+            core.log.error("Failed to decode JSON: ", err, " | Response body: ", full_body)
 
-        core.log.warn("JSON decoding after everythigs anil--------------------------------------------")
+            data = {
+            result_code = 110,
+            msg = full_body or "Invalid JSON response from upstream"
+            }
+        end
+
+core.log.warn("Decoded JSON or fallback result: ", json.encode(data))
         
        
 
@@ -215,12 +223,28 @@ function _M.body_filter(conf, ctx)
         result["response_timestamp"] = get_timestamp()
 
 
-         result["result"] = data and data.result or  data.msg or {}
-       
+        -- result["result"] = data and data.result or  data.msg or {}
         
-        if type(result["result"]) == "string" then
-            result["result"] = "" 
+        -- if type(result["result"]) == "string" then
+        --     result["result"] = "" 
+        -- end
+
+        if data and type(data.result) == "table" then
+            result["result"] = data.result
+        elseif data and type(data.msg) == "string" then
+            result["result"] = { message = data.msg }
+        else
+            result["result"] = nil  -- hide it completely
         end
+
+
+        -- Remove nil values from result table to avoid encoding them
+        for k, v in pairs(result) do
+            if v == nil then
+            result[k] = nil
+            end
+        end
+        
 
 
         ctx.var.isBulk = "API"

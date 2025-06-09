@@ -253,15 +253,15 @@ function _M.body_filter(conf, ctx)
                 local new_address = {}
                 for addr_k, addr_v in pairs(address_data) do
                     if addr_k == "address_line_1" then
-                        new_address["ADDRESS_LINE_1"] = addr_v
+                        new_address["AADDRESS_LINE_1"] = addr_v
                     elseif addr_k == "address_line_2" then
-                        new_address["ADDRESS_LINE_2"] = addr_v
+                        new_address["AADDRESS_LINE_2"] = addr_v
                     elseif addr_k == "address_line_3" then
-                        new_address["ADDRESS_LINE_3"] = addr_v
+                        new_address["AADDRESS_LINE_3"] = addr_v
                     elseif addr_k == "address_line_4" then
-                        new_address["ADDRESS_LINE_4"] = addr_v
+                        new_address["AADDRESS_LINE_4"] = addr_v
                     elseif addr_k == "address_line_5" then
-                        new_address["ADDRESS_LINE_5"] = addr_v
+                        new_address["AADDRESS_LINE_5"] = addr_v
                     elseif addr_k == "pin_code" then
                         new_address["PIN_CODE"] = addr_v
                     elseif addr_k == "state" then
@@ -273,11 +273,11 @@ function _M.body_filter(conf, ctx)
                 transformed_result["ADDRESS"] = new_address
             else
                 transformed_result["ADDRESS"] = {
-                    ADDRESS_LINE_1 = "N/A",
-                    ADDRESS_LINE_2 = "N/A",
-                    ADDRESS_LINE_3 = "N/A",
-                    ADDRESS_LINE_4 = "N/A",
-                    ADDRESS_LINE_5 = "N/A",
+                    AADDRESS_LINE_1 = "N/A",
+                    AADDRESS_LINE_2 = "N/A",
+                    AADDRESS_LINE_3 = "N/A",
+                    AADDRESS_LINE_4 = "N/A",
+                    AADDRESS_LINE_5 = "N/A",
                     PIN_CODE = "N/A",
                     STATE = "N/A"
                 }

@@ -111,6 +111,8 @@ function _M.body_filter(conf, ctx)
         new_json.encode_sparse_array(true, 1, 1)
         local data, err = new_json.decode(full_body)
 
+
+        
         if err then
             core.log.error("Failed to decode response body: ", err)
             return
@@ -128,7 +130,7 @@ function _M.body_filter(conf, ctx)
         -- end
         
         -- Get the masked Aadhaar number from the response
-        local masked_aadhaar = data.result and data.result.aadhaar_number
+        local masked_aadhaar = data.result and data.result.aadhaar
 
         local notResult = data.result or ""
 
@@ -144,34 +146,24 @@ function _M.body_filter(conf, ctx)
 
         -- if is_blank(notResult) then
         --    result['pan_adhr_link_status'] = "NOT FOUND"
-        
-        local statusCode = tonumber(data.response_code)
 
+        local statusCode = tonumber(data.response_code)
         if  statusCode == 102 then
-            data["billable"]="True"
-            data["success"]="True"
-            if ngx.status == 200 then
-                data["response_message"]="Success"
-                data["response_code"]=101
-                result['pan_adhr_link_status'] = "NOT SEEDED"
-            else
-                data["response_code"]=102
-                data["response_message"]="Invalid ID number or combination of inputs"
-                result['pan_adhr_link_status'] = "INVALID PAN"
-            end
+            result['pan_adhr_link_status'] = "INVALID PAN"
         elseif  statusCode == 103 then
             result['pan_adhr_link_status'] = "NULL"
         elseif  statusCode == 110 then
             result['pan_adhr_link_status'] = "ERROR"
-        elseif statusCode == 401 then
-            result  = nil
+        elseif is_blank(masked_aadhaar) then
+            result['pan_adhr_link_status'] = "NOT SEEDED"
         else
             local request_body = ngx.req.get_body_data()
             local request_data = json.decode(request_body)
             local last_four_digits = request_data and request_data.aadhaar
     
             if not last_four_digits or #last_four_digits ~= 4 then
-                return 400, { message = "Invalid last four digits of Aadhaar in request body",status = "102"}
+                core.log.error("Invalid last four digits of Aadhaar in request body")
+                return
             end
     
             -- Masked Aadhaar usually follows a format like "XXXX-XXXX-1234"

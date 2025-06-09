@@ -47,6 +47,7 @@ function _M.access(conf, ctx)
     if not data then
         core.log.error("Failed to decode JSON body: ", err)
         return 400, { message = "Invalid JSON format" }
+        core.log.warn("JSON decoding after everythigs--45-------------------",new_bodys)
     end
 
     -- Extract phone number field
@@ -56,6 +57,7 @@ function _M.access(conf, ctx)
 
     if not phone or not is_valid_phone(phone) then
         return 400, { message = "Invalid phone number format",status = "102"}
+        core.log.warn("JSON decoding after everythigs--45-------------------",new_bodys)
     end
 
     -- Valid phone number, continue request processing

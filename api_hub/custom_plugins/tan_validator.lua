@@ -13,7 +13,7 @@ local schema = {
 
 local _M = {
     version = 0.1,
-    priority = 600,
+    priority = 700,
     name = plugin_name,
     schema = schema
 }
@@ -44,7 +44,7 @@ function _M.access(conf, ctx)
     local tan_number = data[field_name]
 
     if not tan_number or not is_valid_tan(tan_number) then
-        return 200, { message = "Invalid TAN format", status = "103" }
+        return 400, { message = "Invalid TAN format", status = "102" }
     end
 end
 

@@ -5,7 +5,7 @@ local str = require("resty.string")
 local resty_sha256 = require("resty.sha256")
 local ngx = ngx
 
-local plugin_name = "pan_aadhar_v2"
+local plugin_name = "panmaskaadhaar_enc"
 
 local _M = {
     version = 0.1,
@@ -197,17 +197,14 @@ function _M.body_filter(conf, ctx)
             result_data.billable = "True"
             result.masked_aadhaar = ""
             if type(data.message) == "string"
-             --  and data.message:find("Invalid PAN", 1, true)
-                and data.message:find("Aadhaar not linked", 1, true)
+               and data.message:find("Invalid PAN", 1, true)
                 then
-                  --  result.response_message = "No records found for the given ID or combination of inputs"
-                    result_data.response_message="Success"
-                    result_data.response_code=101
-                    result.pan_adhr_link_status = "NOT SEEDED"
-                else
-                    result_data.response_message = "No records found for the given ID or combination of inputs"
+                    result.response_message = "No records found for the given ID or combination of inputs"
                     result.pan_adhr_link_status = "NULL"
-                    result_data.response_code=103
+                else
+                    result.response_message = "No records found for the given ID or combination of inputs"
+                    result.pan_adhr_link_status = "NOT SEEDED"
+                    result.response_code = 101
             end
 
         elseif result_data.response_code == 102 then
@@ -230,11 +227,15 @@ function _M.body_filter(conf, ctx)
 
         result_data.result = result
 
-         ctx.var.isBulk = "API"
-        local header_key = "x-trx-type"
+        ctx.var.isBulk = "API"
+        local header_key = "x-trx-type" -- Replace with the desired header key
+ --       core.log.warn("data bulk", new_json.encode(ngx.req.get_headers()))
         if ngx.req.get_headers()[header_key] then
             ctx.var.isBulk = ngx.req.get_headers()[header_key]
+--            core.log.warn("data bulk", new_json.encode(ctx.var.isBulk))
         end
+
+
         ngx.arg[1] = sorted_json(result_data)
         ngx.arg[2] = true
     end

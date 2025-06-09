@@ -72,7 +72,7 @@ plugin_attr:
           - route_name: $route_name
           - client_ip: $remote_addr  
   redis_cache:
-    redis_host: "redis"
+    redis_host: "13.203.59.217"
     redis_port: 6379
     redis_password: ""
     redis_db: 0
@@ -119,7 +119,13 @@ plugins:
   - uan_passbook_result
   - pan_aadhar_v2
   - panmaskaadhaar_enc
-
+  - pan_basic_v1
+  - pipeline-request
+  - cache_redis_new
+  - bodyTransformer
+  - transform_responseBAV
+  - tb
+  - ifsc_validator
   
   # - multi-auth
   # - key-auth

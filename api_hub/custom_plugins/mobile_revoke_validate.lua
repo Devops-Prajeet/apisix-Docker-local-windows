@@ -6,7 +6,7 @@ local plugin_name = "mobile_revoke_validate"
 local schema = {
     type = "object",
     properties = {
-        phone_field = { type = "string", default = "mobile", "mobile_no"} -- Field to validate
+        phone_field = { type = "string", default = "mobile"} -- Field to validate
     },
     required = {"phone_field"}
 }

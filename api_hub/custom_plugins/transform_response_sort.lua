@@ -7,13 +7,13 @@ local resty_sha256 = require("resty.sha256")
 local resty_random  = require("resty.random")
 local ngx = ngx
 
-local plugin_name = "pan_tan_to_tds"
+local plugin_name = "transform_response_sort"
 
 local schema = { type = "object", properties = {} }
 
 local _M = {
     version = 1.0,
-    priority = 1500,  -- High priority for modifying responses
+    priority = 2000,  -- High priority for modifying responses
     name = plugin_name,
     schema = schema
 }
@@ -56,34 +56,33 @@ end
 
 
 local billable_dict = {
-        [1] = { BILLABLE = "True", MESSAGE = "Success" },   
-        [2]   = { code = 103, billable = true,  message = "No Record Found" },
-        [3]   = { code = 102, billable = true,  message = "Invalid PAN Number" },
-        [4]   = { code = 102, billable = true,  message = "Invalid TAN Number" },
-        [5]   = { code = 102, billable = false, message = "Invalid Quarter" },
-        [6]   = { code = 102, billable = false, message = "Invalid Financial Year" },
-        [101] = { BILLABLE = "True", MESSAGE = "Success" },
-        [102] = { BILLABLE = "False", MESSAGE = "Invalid ID number or combination of inputs" },
-        [103] = { BILLABLE = "True", MESSAGE = "No records found for the given ID or combination of inputs" },
-        [104] = { BILLABLE = "True", MESSAGE = "Max retries exceeded" },
-        [110] = { BILLABLE = "False", MESSAGE = "Source Unavailable" },
-        [400] = { code = 110, billable = false, message = "Source Unavailable" },
-        [401] = { code = 401, billable = false, message = "Unauthorized" },
-        [402] = { code = 110, billable = false, message = "Source Unavailable" },
-        [403] = { code = 110, billable = false, message = "Source Unavailable" },
-        [404] = { code = 110, billable = false, message = "Source Unavailable" },
-        [301] = { code = 110, billable = false, message = "Source Unavailable" },
-        [302] = { code = 110, billable = false, message = "Source Unavailable" },
-        [500] = { code = 110, billable = false, message = "Source Unavailable" },
-        [502] = { code = 110, billable = false, message = "Source Unavailable" },
-        [503] = { code = 110, billable = false, message = "Source Unavailable" },
-        [504] = { code = 110, billable = false, message = "Source Unavailable" },
-
+    [1] = { BILLABLE = "True", MESSAGE = "Success" },   
+    [2] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
+    [3] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
+    [7] = { BILLABLE = "False", MESSAGE = "Number of PANs exceeds the limit (5)" },
+    [8] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
+    [11] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
+    [12] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
+    [13] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
+    [16] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
+    [99] = { BILLABLE = "False", MESSAGE = "Unknown Error" },
+    [100] = { BILLABLE = "False", MESSAGE = "Internal Error" },
+    [101] = { BILLABLE = "True", MESSAGE = "Success" },
+    [102] = { BILLABLE = "False", MESSAGE = "Invalid ID number or combination of inputs" },
+    [103] = { BILLABLE = "True", MESSAGE = "No records found for the given ID or combination of inputs" },
+    [104] = { BILLABLE = "True", MESSAGE = "Max retries exceeded" },
+    [105] = { BILLABLE = "True", MESSAGE = "Missing Consent" },
+    [106] = { BILLABLE = "False", MESSAGE = "RC number is registered under more than one office" },
+    [107] = { BILLABLE = "False", MESSAGE = "Invalid OTP" },
+    [108] = { BILLABLE = "False", MESSAGE = "This is no longer active" },
+    [109] = { BILLABLE = "False", MESSAGE = "Aadhaar suspended or cancelled. Please verify your Aadhaar at:https://resident.uidai.gov.in/verify " },
+    [110] = { BILLABLE = "False", MESSAGE = "Source Unavailable" },
+    [403] = { BILLABLE = "False", MESSAGE = "Request limit exceeded" },
+    [401] = { BILLABLE = "False", MESSAGE = "Unauthorized" }
 }
 
-
 local success_status_code = {1,200,101}
-local invalid_missing_status_code = {401,6,5,301,3,102,422}
+local invalid_missing_status_code = {401,301,3,102}
 local no_record_found_status_code = {2,4,103}
 
 -- Function to check if value exists in a table
@@ -95,7 +94,7 @@ local function is_in_list(value, list)
     end
     return false
 end
-
+-- local source_unavaible_status_code = [1]
 
 
 -- Capture request start time
@@ -103,41 +102,13 @@ function _M.access(conf, ctx)
     ngx.ctx.request_timestamp = get_timestamp()-- Store request time in seconds
 end
 
-----Sorting response
--- local function sorted_json(tbl)
---     local function encode_value(v)
---         local t = type(v)
---         if t == "table" then
---             return sorted_json(v)
---         elseif t == "string" then
---             return '"' .. v:gsub('"', '\\"') .. '"'
---         elseif t == "boolean" or t == "number" then
---             return tostring(v)
---         else
---             return 'null'
---         end
---     end
-
---     local keys = {}
---     for k in pairs(tbl) do
---         table.insert(keys, k)
---     end
---     table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
-
---     local items = {}
---     for _, k in ipairs(keys) do
---         table.insert(items, '"' .. tostring(k) .. '":' .. encode_value(tbl[k]))
---     end
---     return '{' .. table.concat(items, ',') .. '}'
--- end
 
 
-
-local function sorted_json(tbl, key_order)
+local function sorted_json(tbl)
     local function encode_value(v)
         local t = type(v)
         if t == "table" then
-            return sorted_json(v)  -- nested tables still get sorted alphabetically
+            return sorted_json(v)
         elseif t == "string" then
             return '"' .. v:gsub('"', '\\"') .. '"'
         elseif t == "boolean" or t == "number" then
@@ -147,50 +118,19 @@ local function sorted_json(tbl, key_order)
         end
     end
 
-    local items = {}
-
-    -- Add keys from custom order first
-    if key_order then
-        for _, k in ipairs(key_order) do
-            if tbl[k] ~= nil then
-                table.insert(items, '"' .. k .. '":' .. encode_value(tbl[k]))
-            end
-        end
-    end
-
-    -- Add remaining keys not in custom order (sorted)
-    local remaining_keys = {}
-    local order_lookup = {}
-    for _, k in ipairs(key_order or {}) do
-        order_lookup[k] = true
-    end
-
+    local keys = {}
     for k in pairs(tbl) do
-        if not order_lookup[k] then
-            table.insert(remaining_keys, k)
-        end
+        table.insert(keys, k)
     end
+    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
 
-    table.sort(remaining_keys, function(a, b) return tostring(a) < tostring(b) end)
-    for _, k in ipairs(remaining_keys) do
+    local items = {}
+    for _, k in ipairs(keys) do
         table.insert(items, '"' .. tostring(k) .. '":' .. encode_value(tbl[k]))
     end
-
     return '{' .. table.concat(items, ',') .. '}'
 end
 
-
-local key_order = {
-    "transaction_id",
-    "input",
-    "success",
-    "billable",
-    "response_code",
-    "response_message",
-    "result",
-    "request_timestamp",
-    "response_timestamp"
-}
 
 
 
@@ -218,12 +158,12 @@ function _M.body_filter(conf, ctx)
         new_json.encode_sparse_array(true, 1, 1)
         local data,err = new_json.decode(full_body)
         if data then
-            core.log.warn("Anil kumar yadav", new_json.encode(data),new_json.encode(err))
+            core.log.warn("JSON decoding after everythigs", new_json.encode(data),new_json.encode(err))
             -- return
         end
         
         -- local sourceMessage = data and  data['message'] or data['response_message']
-        local result = {}
+        local result = { }
         if ngx.status == 401 then
             result["response_code"] = 401
             result["response_message"] = "Bad credentials provided"
@@ -245,11 +185,10 @@ function _M.body_filter(conf, ctx)
             ngx.arg[2] = true
             return
 
-         elseif ngx.status == 429 then 
+        elseif ngx.status == 429 then 
             result["response_code"] = 429
-            result["response_message"] = "Limit exceeds , Too many requests"
+            result["response_message"] = "Too Many Requests !! Limit Exceeds"
             local new_bodys = new_json.encode(result)
-            --core.log.warn("DATA---------------------------------------------------------",new_bodys)
         
             -- Set modified response and terminate further chunk processing
             ngx.arg[1] = new_bodys
@@ -261,6 +200,7 @@ function _M.body_filter(conf, ctx)
 
         local request_body = ngx.req.get_body_data()
         local input_data = request_body and pcall(json.decode, request_body) and json.decode(request_body) or {}
+
 
         if input_data["consent_text"] ~= nil then
             input_data["consent_text"] = nil
@@ -276,12 +216,8 @@ function _M.body_filter(conf, ctx)
         
         
         -- Get HTTP status from the response
-        local statusCode = data and data.status or  data.result_code
-
-        
-       -- local statusCode = (data and data.status) or data.status or (data and data.result_code)
-        local http_status = tonumber(statusCode) 
-
+        -- core.log.warn("Updated response body for everythings: tranform lua and scirpt ", core.json.encode(data))
+        local http_status = tonumber(data.status)   -- Get the HTTP status code from Nginx
         
         -- Map source HTTP status to response code
 
@@ -296,43 +232,27 @@ function _M.body_filter(conf, ctx)
             result["response_code"] = 110
         end
         
+        
 
         local billable_info = billable_dict[result["response_code"]] or { BILLABLE = "False", MESSAGE = "Unknown Response Code" }
-        
-        result["billable"] = billable_info.BILLABLE
+
+        result['billable'] = billable_info.BILLABLE
 
         if billable_info.BILLABLE == "True" then
-            result["success"] = "True"
+            result['success'] = "True"
         else 
-            result["success"] = "False"
+            result['success'] = "False"
         end
 
-        result["response_message"] = billable_info.MESSAGE
+        result['response_message'] = billable_info.MESSAGE
         result["request_timestamp"] = ngx.ctx.request_timestamp  
         result["response_timestamp"] = get_timestamp()
-        result["result"] = data and data.result or  data.msg or {}
-
-        if type(result["result"]) == "string" then
-            result["result"] = "" 
-        end
-
-        -- Check for a specific key in the request headers
-        ctx.var.isBulk = "API"
-        local header_key = "x-trx-type"  
-        if ngx.req.get_headers()[header_key] then
-            ctx.var.isBulk = ngx.req.get_headers()[header_key]
-        end
+        result['result'] = data and data.result or  data.msg or {}
         
-        -- Check for a specific key in the request headers
-        ctx.var.isLogIn_id = 0
-        local header_key_login = "x-login-id"  
-        if ngx.req.get_headers()[header_key_login] then
-            ctx.var.isLogIn_id = ngx.req.get_headers()[header_key_login]
-        end
-
-        
-        local new_body = sorted_json(result,key_order)
-        --Set modified response and terminate further chunk processing
+        -- Encode modified response
+        -- local new_body = new_json.encode(result)
+        local new_body = sorted_json(result)
+        -- Set modified response and terminate further chunk processing
         ngx.arg[1] = new_body
         ngx.arg[2] = true
         

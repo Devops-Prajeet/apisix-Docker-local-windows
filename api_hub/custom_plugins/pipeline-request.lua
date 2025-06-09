@@ -37,16 +37,16 @@ local plugin_schema = {
                         type = "boolean",
                         default = false,
                     },
-                    -- timeout = {
-                    --     type = "integer",
-                    --     minimum = 1,
-                    --     maximum = 6000000,
-                    --     default = 60000,
-                    --     description = "timeout in milliseconds",
-                    -- },
-                    -- keepalive = {type = "boolean", default = true},
-                    -- keepalive_timeout = {type = "integer", minimum = 1000, default = 600000},
-                    -- keepalive_pool = {type = "integer", minimum = 1, default = 5},
+                    timeout = {
+                        type = "integer",
+                        minimum = 1,
+                        maximum = 6000000,
+                        default = 60000,
+                        description = "timeout in milliseconds",
+                    },
+                    keepalive = {type = "boolean", default = true},
+                    keepalive_timeout = {type = "integer", minimum = 1000, default = 600000},
+                    keepalive_pool = {type = "integer", minimum = 1, default = 5},
                 },
                 required = {"url"},
             },
@@ -62,8 +62,6 @@ local _M = {
     name     = plugin_name,
     schema   = plugin_schema,
 }
-
-
  
 
 function _M.check_schema(conf)
@@ -96,23 +94,25 @@ function _M.access(conf, ctx)
         local httpc = http.new()
         httpc:set_timeout(node.timeout)
 
-        if last_resp ~= nil then
+        if last_resp ~= nil then            
             local decoded_body, err = core.json.decode(last_resp.body)
             if not decoded_body then
                 return 500, "JSON decoding failed"
             end
-            -- Add new fields to the response
+             
             -- core.log.warn("decoded_body in pipeline lua", core.json.encode(decoded_body['data']['uan_number']))
             local statusCode = decoded_body and decoded_body['status'] or decoded_body['response_code'] or decoded_body['status_code']
-            -- core.log.warn("Updated response body for everythings: ", core.json.encode(ngx.status))
-            if statusCode ~= 1 and  statusCode ~= 200 then
+            
+            local statusCode = tonumber(statusCode) 
+            if statusCode ~= 101 and  statusCode ~= 200 then
                 decoded_body['status'] = statusCode
-                return core.response.exit(ngx.status,decoded_body)
+                return core.response.exit(last_resp.status,decoded_body)
              
             end
-            
+             
             if decoded_body["result"] then
                 decoded_body = decoded_body['result']
+
             elseif decoded_body["data"] then
                 decoded_body = {
                     uan = decoded_body['data']['uan_number']
@@ -122,8 +122,6 @@ function _M.access(conf, ctx)
                  decoded_body = {}
             end
 
-            decoded_body['consent'] = string.gsub("Y", "[\r\n]", "")
-            decoded_body['consent_text'] = string.gsub("I give my consent to employment-history(v2) api to check my employment history", "[\r\n]", "")
             -- Setup body from last success response
             params.method = "POST" 
             params.body = core.json.encode(decoded_body)
@@ -142,18 +140,15 @@ function _M.access(conf, ctx)
             end
         end
 
-        -- send request to each node and temporary store response
-        core.log.warn("Updated response body for everythings: ", core.json.encode(params.body))
         last_resp, err = httpc:request_uri(node.url, {
             method = "POST",
             body = params.body,  -- Manually passing a static payload
             headers = {
                 ["Content-Type"] = "application/json",
-                -- ["api-key"] = "123456789"
+                ["api-key"] = "SanjayWorking"
             },
             ssl_verify = false
-        })
-        core.log.warn("Updated response body for everythings: last resps and jdfkj ", core.json.encode(last_resp))
+        })     
         if not last_resp then
             return 500, "request failed: " .. err
         end
@@ -174,11 +169,7 @@ function _M.access(conf, ctx)
 
         ::continue::
     end
-
-    
-
-    return 200, last_resp.body
+    return last_resp.status, last_resp.body
 end
-
 
 return _M

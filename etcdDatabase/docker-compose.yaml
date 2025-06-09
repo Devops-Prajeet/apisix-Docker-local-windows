@@ -9,10 +9,10 @@ services:
     environment:
       - ALLOW_NONE_AUTHENTICATION=yes
       - ETCD_ENABLE_V2=true
-      - ETCD_ADVERTISE_CLIENT_URLS=http://49.205.172.103:2379
-      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://49.205.172.103:2373
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2373
     ports:
-      - "2379:2379"
+      - "2379:2373"
       - "2380:2380"
     networks: 
       - etcd_network

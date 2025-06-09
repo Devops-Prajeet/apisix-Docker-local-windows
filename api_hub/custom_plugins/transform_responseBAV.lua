@@ -53,35 +53,49 @@ local function generate_transaction_id()
 end
 
 
-local billable_dict = {
-    [1] = { BILLABLE = "True", MESSAGE = "Success" },   
-    [2] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
-    [3] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
-    [7] = { BILLABLE = "False", MESSAGE = "Number of PANs exceeds the limit (5)" },
-    [8] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
-    [11] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
-    [12] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
-    [13] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
-    [16] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
-    [99] = { BILLABLE = "False", MESSAGE = "Unknown Error" },
-    [100] = { BILLABLE = "False", MESSAGE = "Internal Error" },
-    [101] = { BILLABLE = "True", MESSAGE = "Success" },
-    [102] = { BILLABLE = "False", MESSAGE = "Invalid ID number or combination of inputs" },
-    [103] = { BILLABLE = "True", MESSAGE = "No records found for the given ID or combination of inputs" },
-    [104] = { BILLABLE = "True", MESSAGE = "Max retries exceeded" },
-    [105] = { BILLABLE = "True", MESSAGE = "Missing Consent" },
-    [106] = { BILLABLE = "False", MESSAGE = "RC number is registered under more than one office" },
-    [107] = { BILLABLE = "False", MESSAGE = "Invalid OTP" },
-    [108] = { BILLABLE = "False", MESSAGE = "This is no longer active" },
-    [109] = { BILLABLE = "False", MESSAGE = "Aadhaar suspended or cancelled. Please verify your Aadhaar at:https://resident.uidai.gov.in/verify " },
-    [110] = { BILLABLE = "False", MESSAGE = "Source Unavailable" },
-    [403] = { BILLABLE = "False", MESSAGE = "Request limit exceeded" },
-    [401] = { BILLABLE = "False", MESSAGE = "Unauthorized" }
-}
+-- local billable_dict = {
+--     [1] = { BILLABLE = "True", MESSAGE = "Success" },   
+--     [2] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
+--     [3] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
+--     [7] = { BILLABLE = "False", MESSAGE = "Number of PANs exceeds the limit (5)" },
+--     [8] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
+--     [11] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
+--     [12] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
+--     [13] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
+--     [16] = { BILLABLE = "False", MESSAGE = "Source Downtime" },
+--     [99] = { BILLABLE = "False", MESSAGE = "Unknown Error" },
+--     [100] = { BILLABLE = "False", MESSAGE = "Internal Error" },
+--     [101] = { BILLABLE = "True", MESSAGE = "Success" },
+--     [102] = { BILLABLE = "False", MESSAGE = "Invalid ID number or combination of inputs" },
+--     [103] = { BILLABLE = "True", MESSAGE = "No records found for the given ID or combination of inputs" },
+--     [104] = { BILLABLE = "True", MESSAGE = "Max retries exceeded" },
+--     [105] = { BILLABLE = "True", MESSAGE = "Missing Consent" },
+--     [106] = { BILLABLE = "False", MESSAGE = "RC number is registered under more than one office" },
+--     [107] = { BILLABLE = "False", MESSAGE = "Invalid OTP" },
+--     [108] = { BILLABLE = "False", MESSAGE = "This is no longer active" },
+--     [109] = { BILLABLE = "False", MESSAGE = "Aadhaar suspended or cancelled. Please verify your Aadhaar at:https://resident.uidai.gov.in/verify " },
+--     [110] = { BILLABLE = "False", MESSAGE = "Source Unavailable" },
+--     [403] = { BILLABLE = "False", MESSAGE = "Request limit exceeded" },
+--     [401] = { BILLABLE = "False", MESSAGE = "Unauthorized" }
+-- }
 
-local success_status_code = {1,200,101}
-local invalid_missing_status_code = {401,301,3,102,422}
-local no_record_found_status_code = {2,4,103,404}
+
+
+local billable_dict = {
+    ["TB000"] = { statusCode = "TXN" ,BILLABLE = "True", MESSAGE = "Account details successfully verified", remark = "Transaction Successful"},   
+    ["TB001"] = { statusCode = "IAN",BILLABLE = "True",MESSAGE= "Invalid Account Number",remark = "Invalid Account Number" }, 
+    ["TB402"] = { statusCode = "FAB",BILLABLE = "False" ,MESSAGE= "Failure at Bank end",remark = "Failure at Bank end"}, 
+    ["TB005"] = { statusCode = "IAN" ,BILLABLE = "True",MESSAGE= "Invalid Account Number",remark = "Invalid Account Number"}, 
+    ["TB006"] = { statusCode = "IAN" ,BILLABLE = "True",MESSAGE= "Invalid Account Number",remark = "Invalid Account Number"}, 
+    ["TB008"] = { statusCode = "TUP" ,BILLABLE = "True",MESSAGE= "Transaction under Process",remark = "Transaction under process"}, 
+    ["TB301"] = { statusCode = "TUP" ,BILLABLE = "True",MESSAGE= "Transaction under Process",remark = "Transaction under process"}, 
+    ["TB302"] = { statusCode = "TUP" ,BILLABLE = "True",MESSAGE= "Transaction under Process",remark = "Transaction under process"}, 
+    ["TB401"] = { statusCode = "UNE",BILLABLE = "False" ,MESSAGE= "Unknown Error",remark = "Unknown Error"},
+    ["TB101"] = { statusCode = "IE" ,BILLABLE = "False",MESSAGE= "Internal Error",remark = "Internal Error"},
+    ["TB007"] = { statusCode = "IAN" ,BILLABLE = "True",MESSAGE= "Invalid Account Number",remark = "Invalid Account Number"}, 
+    ["TB102"] = { statusCode = "IAN" ,BILLABLE = "True",MESSAGE= "Invalid Account Number",remark = "Invalid Account Number"}, 
+    ["TB009"] = { statusCode = "SUA",BILLABLE = "False",MESSAGE= "Service Unavailable" ,remark = "Transaction Successful"}   
+}
 
 -- Function to check if value exists in a table
 local function is_in_list(value, list)
@@ -125,9 +139,9 @@ function _M.body_filter(conf, ctx)
         local data,err = new_json.decode(full_body)
          
         full_body = new_json.decode(full_body)
-        if ctx.var.responseFromHeader then 
-            full_body.x_trx_id = ctx.var.responseFromHeader
-        end
+        -- if ctx.var.responseFromHeader then 
+        --     full_body.x_trx_id = ctx.var.responseFromHeader
+        -- end
 
         ctx.var.responseBodyFromSource = new_json.encode(full_body)
         if data then
@@ -190,33 +204,18 @@ function _M.body_filter(conf, ctx)
         
         -- Get HTTP status from the response
         local statusCode = data and (
-                        data.status
-                        or data.statusCode
-                        or data.result_code
-                        or data.response_code
-                        or (type(data.result) == "table" and data.result.status_code)
-                        or (type(data.error) == "table" and data.error.statusCode)
+                        data.statusCode
+                         
                     )
-                    
-                   
-        local http_status = tonumber(statusCode) 
-        -- Map source HTTP status to response code
-        -- core.log.warn("status code encode" ,(type(data.error) == "table" and data.error.status_code) )
-        if is_in_list(http_status, success_status_code) then
-            result["response_code"] = 101
-        elseif is_in_list(http_status, invalid_missing_status_code) then
-            result["response_code"] = 102 
-        elseif is_in_list(http_status, no_record_found_status_code) then
-            result["response_code"] = 103
-        else  
-            result["response_code"] = 110
-        end
+         
         
         
 
-        local billable_info = billable_dict[result["response_code"]] or { BILLABLE = "False", MESSAGE = "Unknown Response Code" }
+        local billable_info = billable_dict[statusCode] or { BILLABLE = "False", MESSAGE = "Unknown Response Code" }
 
         result["billable"] = billable_info.BILLABLE
+        result["response_code"] = billable_info.statusCode
+        result["response_message"] = billable_info.MESSAGE
 
         if billable_info.BILLABLE == "True" then
             result["success"] = "True"
@@ -224,15 +223,21 @@ function _M.body_filter(conf, ctx)
             result["success"] = "False"
         end
 
-        result["response_message"] = billable_info.MESSAGE
+        
         result["request_timestamp"] = ngx.ctx.request_timestamp  
         result["response_timestamp"] = get_timestamp()
-        result["result"] = data and data.result  or  data.msg or  data.data or {}
+        result["result"] =  {
+            result_name = data.nameAtBank,
+            result_bank_ref = data.utr,
+            result_remark = billable_info.remark,
+            result_status = data.acValidationStatus
+             
+        }
        
         
-        if type(result["result"]) == "string" then
-            result["result"] = "" 
-        end
+        -- if type(result["result"]) == "string" then
+        --     result["result"] = "" 
+        -- end
 
         -- Check for a specific key in the request headers
         ctx.var.isBulk = "API"

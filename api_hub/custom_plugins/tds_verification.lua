@@ -50,20 +50,21 @@ end
 -- Define billable mapping from your table
 local billable_dict = {
     [1] = { BILLABLE = "True", MESSAGE = "Success" },   
-    [2]   = { code = 103, billable = "True",  message = "Invalid PAN Number" },
-    [3]   = { code = 102, billable = "True",  message = "Invalid TAN Number" },
-    [4]   = { code = 102, billable = "True",  message = "Invalid Financial Year" },
+    -- [2]   = { code = 102, billable = "True",  message = "Invalid PAN Number" },
+    -- [3]   = { code = 102, billable = "True",  message = "Invalid TAN Number" },
+    -- [4]   = { code = 102, billable = "True",  message = "Invalid Financial Year" },
     [101] = { BILLABLE = "True", MESSAGE = "Success" },
-    [102] = { BILLABLE = "False", MESSAGE = "Invalid ID number or combination of inputs" },
+    [102] = { BILLABLE = "True", MESSAGE = "Invalid ID number or combination of inputs" },
     [103] = { BILLABLE = "True", MESSAGE = "No records found for the given ID or combination of inputs" },
     [104] = { BILLABLE = "True", MESSAGE = "Max retries exceeded" },
     [110] = { BILLABLE = "False", MESSAGE = "Source Unavailable" },
-    [400] = { code = 110, billable = false, message = "Source Unavailable" },
+    [400] = { code = 102, billable = false, message = "Parameter Missing" },
     [401] = { code = 401, billable = false, message = "Bad credentials provided" },
     [402] = { code = 110, billable = false, message = "Source Unavailable" },
     [403] = { code = 110, billable = false, message = "Source Unavailable" },
     [404] = { code = 110, billable = false, message = "Source Unavailable" },
-    [301] = { code = 110, billable = false, message = "Source Unavailable" },
+    -- [301] = { code = 110, billable = false, message = "Source Unavailable" },
+    [422] = { BILLABLE = "False", MESSAGE = "Parameter Missing" },
     [302] = { code = 110, billable = false, message = "Source Unavailable" },
     [500] = { code = 110, billable = false, message = "Source Unavailable" },
     [502] = { code = 110, billable = false, message = "Source Unavailable" },
@@ -74,19 +75,9 @@ local billable_dict = {
 
 
 local success_status_code = {1,200,101}
-local invalid_missing_status_code = {401,6,301,102,422,403}
-local no_record_found_status_code = {2,4,3,4,103}
-
--- Function to check if value exists in a table
-local function is_in_list(value, list)
-    for _, v in ipairs(list) do
-        if v == value then
-            return true
-        end
-    end
-    return false
-end
-
+local invalid_missing_status_code = {401,6,301,102,403}
+local no_record_found_status_code = {103}
+local parameter_missing_status_code ={422}
 
 
 -- Capture request start time
@@ -94,12 +85,11 @@ function _M.access(conf, ctx)
     ngx.ctx.request_timestamp = get_timestamp()-- Store request time in seconds
 end
 
-----Sorting response
-local function sorted_json(tbl)
+local function sorted_json(tbl, key_order)
     local function encode_value(v)
         local t = type(v)
         if t == "table" then
-            return sorted_json(v)
+            return sorted_json(v)  -- nested tables still get sorted alphabetically
         elseif t == "string" then
             return '"' .. v:gsub('"', '\\"') .. '"'
         elseif t == "boolean" or t == "number" then
@@ -109,18 +99,51 @@ local function sorted_json(tbl)
         end
     end
 
-    local keys = {}
-    for k in pairs(tbl) do
-        table.insert(keys, k)
-    end
-    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
-
     local items = {}
-    for _, k in ipairs(keys) do
+
+    -- Add keys from custom order first
+    if key_order then
+        for _, k in ipairs(key_order) do
+            if tbl[k] ~= nil then
+                table.insert(items, '"' .. k .. '":' .. encode_value(tbl[k]))
+            end
+        end
+    end
+
+    -- Add remaining keys not in custom order (sorted)
+    local remaining_keys = {}
+    local order_lookup = {}
+    for _, k in ipairs(key_order or {}) do
+        order_lookup[k] = true
+    end
+
+    for k in pairs(tbl) do
+        if not order_lookup[k] then
+            table.insert(remaining_keys, k)
+        end
+    end
+
+    table.sort(remaining_keys, function(a, b) return tostring(a) < tostring(b) end)
+    for _, k in ipairs(remaining_keys) do
         table.insert(items, '"' .. tostring(k) .. '":' .. encode_value(tbl[k]))
     end
+
     return '{' .. table.concat(items, ',') .. '}'
 end
+
+
+local key_order = {
+    "transaction_id",
+    "input",
+    "success",
+    "billable",
+    "response_code",
+    "response_message",
+    "result",
+    "request_timestamp",
+    "response_timestamp"
+}
+
 
 
 
@@ -148,9 +171,12 @@ function _M.body_filter(conf, ctx)
         new_json.encode_sparse_array(true, 1, 1)
         local data,err = new_json.decode(full_body)
         if data then
-            core.log.warn("data_testing...........", new_json.encode(data),new_json.encode(err))
+            core.log.warn("DATA........................", new_json.encode(data),new_json.encode(err))
             -- return
         end
+
+
+
         
         -- local sourceMessage = data and  data['message'] or data['response_message']
         local result = {}
@@ -175,13 +201,24 @@ function _M.body_filter(conf, ctx)
             ngx.arg[2] = true
             return
 
-         elseif ngx.status == 429 then 
+
+        -- elseif ngx.status == 422 then  -- Handling 422 status code for parameter validation
+        --     result["response_code"] = 422
+        --     result["response_message"] = "Parameter Missing"
+        --     local new_bodys = new_json.encode(result)
+
+        --     ngx.arg[1] = new_bodys
+        --     ngx.arg[2] = true
+        --     return
+
+
+        elseif ngx.status == 429 then 
             result["response_code"] = 429
             result["response_message"] = "Limit exceeds , Too many requests"
             local new_bodys = new_json.encode(result)
             --core.log.warn("DATA---------------------------------------------------------",new_bodys)
         
-
+            -- Set modified response and terminate further chunk processing
             ngx.arg[1] = new_bodys
             ngx.arg[2] = true
             return
@@ -213,7 +250,6 @@ function _M.body_filter(conf, ctx)
         if is_in_list(http_status, success_status_code) then
             result["response_code"] = 101
         elseif is_in_list(http_status, invalid_missing_status_code) then
-          
             result["response_code"] = 102
           
         elseif is_in_list(http_status, no_record_found_status_code) then
@@ -223,37 +259,38 @@ function _M.body_filter(conf, ctx)
         end
         
         
-
         local billable_info = billable_dict[result["response_code"]] or { BILLABLE = "False", MESSAGE = "Unknown Response Code" }
 
         result["billable"] = billable_info.BILLABLE
+        result["success"] = billable_info.BILLABLE == "True" and "True" or "False"
 
-        if billable_info.BILLABLE == "True" then
-            result["success"] = "True"
-        else 
-            result["success"] = "False"
+        if not result["response_message"] then
+            result["response_message"] = billable_info.MESSAGE
         end
-
-        result["response_message"] = billable_info.MESSAGE
-
-      
-    
+        
+       
         result["request_timestamp"] = ngx.ctx.request_timestamp  
         result["response_timestamp"] = get_timestamp()
         result["result"] = data and data.result or  data.msg or {}
        
         
-        if type(result["result"]) == "string" then
-            result["result"] = "" 
-        end
-
         -- Check for a specific key in the request headers
         ctx.var.isBulk = "API"
-        local header_key = "x-trx-type" -- Replace with the desired header key
- --       core.log.warn("data bulk", new_json.encode(ngx.req.get_headers()))
+        local header_key = "x-trx-type"  
         if ngx.req.get_headers()[header_key] then
             ctx.var.isBulk = ngx.req.get_headers()[header_key]
---            core.log.warn("data bulk", new_json.encode(ctx.var.isBulk))
+        end
+        
+        -- Check for a specific key in the request headers
+        ctx.var.isLogIn_id = 0
+        local header_key_login = "x-login-id"  
+        if ngx.req.get_headers()[header_key_login] then
+            ctx.var.isLogIn_id = ngx.req.get_headers()[header_key_login]
+        end
+
+
+        if type(result["result"]) == "string" then
+            result["result"] = "" 
         end
         
         local new_body = sorted_json(result)

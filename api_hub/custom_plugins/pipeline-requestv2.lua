@@ -95,6 +95,7 @@ function _M.access(conf, ctx)
         httpc:set_timeout(node.timeout)
 
         if last_resp ~= nil then
+            
             local decoded_body = {}
             if type(last_resp.body) == "table" then
                 decoded_body = core.json.decode(last_resp.body)
@@ -103,25 +104,16 @@ function _M.access(conf, ctx)
                local data = core.json.decode(last_resp.body)
 
                if data == nil then 
-                    decoded_body['status']  = 1
                     decoded_body [ "requestData"] = last_resp.body
                else 
-                    if not decoded_body['status'] then
-                        decoded_body['status'] = 1
-                    end
                     decoded_body = data
                end
                  
             end 
-
-            local statusCode = decoded_body and decoded_body['status'] or decoded_body['response_code'] or decoded_body['status_code']
-            if statusCode ~= 1 and  statusCode ~= 200 then
-                decoded_body['status'] = statusCode
-                return core.response.exit(ngx.status,decoded_body)
-             
-            end
- 
             decoded_body = decoded_body
+            -- decoded_body['consent'] = string.gsub("Y", "[\r\n]", "")
+            -- decoded_body['consent_text'] = string.gsub("I give my consent to employment-history(v2) api to check my employment history", "[\r\n]", "")
+            -- Setup body from last success response
             params.method = "POST" 
             params.body = core.json.encode(decoded_body)
         else

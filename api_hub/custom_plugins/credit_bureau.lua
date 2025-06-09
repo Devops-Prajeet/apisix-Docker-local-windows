@@ -74,7 +74,6 @@ local function get_ist_timestamp()
 end
 
 
-
 local function sorted_json(tbl)
     local function encode_value(v)
         local t = type(v)
@@ -101,6 +100,8 @@ local function sorted_json(tbl)
     end
     return '{' .. table.concat(items, ',') .. '}'
 end
+
+
 
 
 
@@ -170,15 +171,12 @@ function _M.body_filter(conf, ctx)
         if ngx.status == 401 then
             result["response_code"] = 401
             result["response_message"] = "Bad credentials provided"
-            -- result["result"] = {}
         elseif ngx.status == 403 then
             result["response_code"] = 403
             result["response_message"] = "Access Denied"
-            -- result["result"] = {}
         elseif ngx.status == 429 then
             result["response_code"] = 429
             result["response_message"] = "Limit exceeds, Too many requests"
-            -- result["result"] = {}
         elseif data then
             result = data
             if result.response_code == 101 and result.result and type(result.result) == "table" then
@@ -188,8 +186,7 @@ function _M.body_filter(conf, ctx)
                 end
 
                  
-            elseif result.response_code == 103 then
-                result.result = {}
+            
             elseif result.response_code == 102 then
                 data["billable"]="False"
                 data["success"]="False"
@@ -205,12 +202,28 @@ function _M.body_filter(conf, ctx)
                     data["response_message"]="Invalid ID number or combination of inputs"
                     result.result = {}
                 end
+            elseif result.response_code == 103 then
+                    result.result = {}
 
             end
             result["input"] = ngx.ctx.response_bodyRequest
         end
 
-        -- local new_body = json.encode(result)
+        -- Check for a specific key in the request headers
+        ctx.var.isBulk = "API"
+        local header_key = "x-trx-type"  
+        if ngx.req.get_headers()[header_key] then
+            ctx.var.isBulk = ngx.req.get_headers()[header_key]
+        end
+        
+        -- Check for a specific key in the request headers
+        ctx.var.isLogIn_id = 0
+        local header_key_login = "x-login-id"  
+        if ngx.req.get_headers()[header_key_login] then
+            ctx.var.isLogIn_id = ngx.req.get_headers()[header_key_login]
+        end
+
+
         local new_body = sorted_json(result)
         ngx.arg[1] = new_body
         ngx.arg[2] = true

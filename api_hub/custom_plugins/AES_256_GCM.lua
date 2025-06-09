@@ -130,17 +130,12 @@ function _M.check_body(ctx, required_key_1, required_key_2, json_body)
     end
 
     local aadhaar = json_body[required_key_2]
-
-
-
     if aadhaar then
         -- Check if Aadhaar number is 4 digits long
         if #aadhaar ~= 4 then
             return 400, { status = "102", message = "Aadhaar number must be 4 digits" }
         end
     end
-
-    
 
     -- If both keys exist and PAN is valid, allow the request to continue
     return 200, { status = "101", message = "Request is valid" }
