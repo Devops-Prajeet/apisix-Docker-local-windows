@@ -26,7 +26,7 @@ services:
        - "9094:9091/tcp"
        - "9092:9092/tcp"
     environment:
-       - ETCD_HOST=http://13.233.56.23:2379
+       - ETCD_HOST=http://localhost:2379
     volumes:
         - ./apisix_config.yaml:/usr/local/apisix/conf/config.yaml:ro
         - ./plugins:/opt/apisix/plugins:ro
