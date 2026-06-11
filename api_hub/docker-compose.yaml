@@ -1,6 +1,6 @@
 services:
   etcd:
-    image: bitnami/etcd:3.5.11
+    image: dhi.io/etcd:3-debian-dev
     restart: always
     volumes:
       - etcd_data:/bitnami/etcd
@@ -39,8 +39,8 @@ services:
     ports:
       - "9095:9000"
     environment:
-      - APISIX_BASE_URL=http://13.233.56.23:9180
-      - ETCD_HOST=http://13.233.56.23:2379
+      - APISIX_BASE_URL=http://localhost:9180
+      - ETCD_HOST=http://localhost:2379
     volumes:
       - ./apisix_dashboard_config.yaml:/usr/local/apisix-dashboard/conf/conf.yaml:ro
     networks:

@@ -44,7 +44,7 @@ deployment:
   #   timeout: 30 
   etcd:
     host:                        # It's possible to define multiple etcd hosts addresses of the same etcd cluster.
-      - "http://13.233.56.23:2379"        # Multiple etcd address
+      - "http://etcd:2379"        # Multiple etcd address
     prefix: "/apisix"            # APISIX configurations prefix
     timeout: 30  
 
@@ -72,7 +72,7 @@ plugin_attr:
           - route_name: $route_name
           - client_ip: $remote_addr  
   redis_cache:
-    redis_host: "13.233.56.23"
+    redis_host: "localhost"
     redis_port: 6379
     redis_password: ""
     redis_db: 0
