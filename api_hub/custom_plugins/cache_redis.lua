@@ -8,7 +8,7 @@ local plugin_name = "cache_redis"
 local schema = {
     type = "object",
     properties = {
-        redis_host = { type = "string", default = "13.203.59.217" },
+        redis_host = { type = "string", default = "127.0.0.1" },
         redis_port = { type = "integer", default = 6379 },
         redis_key_prefix = { type = "string", default = "apisix:response:" },
         redis_ttl = { type = "integer", default = 86400 } -- Cache TTL (24 hours)
@@ -60,7 +60,7 @@ local function get_consumer_by_key(api_key)
         if consumer.value and consumer.value.plugins and consumer.value.plugins["key-auth"] then
             local stored_key = consumer.value.plugins["key-auth"].key
             if stored_key == api_key then
-                return consumer.value.username -- Return the matching username
+                return consumer.value -- Return the matching username
             end
         end
     end
@@ -71,12 +71,12 @@ end
 -- 🔹 Access Phase: Check Redis Cache Before Forwarding Request
 function _M.access(conf, ctx)
     -- ✅ Ensure default values are set
-    local redis_host = get_config_value(conf.redis_host, "13.203.59.217")
+    local redis_host = get_config_value(conf.redis_host, "127.0.0.1")
     local redis_port = get_config_value(conf.redis_port, 6379)
     local redis_key_prefix = get_config_value(conf.redis_key_prefix, "apisix:response:")
 
     local redis_client = redis:new()
-    redis_client:set_timeout(1000) -- 1 sec timeout
+    redis_client:set_timeout(4) -- 1 sec timeout
 
     -- Connect to Redis
     local ok, err = redis_client:connect(redis_host, redis_port)
@@ -88,9 +88,49 @@ function _M.access(conf, ctx)
     
     local headers = ngx.req.get_headers()
     ctx.var.apiKey = headers['api-key']
-
     local consumer = get_consumer_by_key(ctx.var.apiKey)
-    ctx.var.consumer  = consumer
+    if not consumer then
+        return 503, { message = "Source Unavailable", statusCode = "110" }
+    end
+
+    local rootId = ctx.route_id or (ctx.matched_route and ctx.matched_route.value and ctx.matched_route.value.id) or "unknown_route_id"
+    -- Fetch wallet data from Redis and check credit
+    local wallet_key = "apisix:wallet_system:" .. ctx.var.apiKey
+    local wallet_data, wallet_err = redis_client:get(wallet_key)
+
+
+    if wallet_data and wallet_data ~= ngx.null then
+        local wallet_json = cjson.decode(wallet_data)
+        if wallet_json and wallet_json.wallet_system_data then
+            local remaining = tonumber(wallet_json.wallet_system_data.remaining_amount)
+            if consumer.labels and consumer.labels[rootId] then
+                if not remaining or remaining < tonumber(consumer.labels[rootId]) then
+                    core.log.warn("Insufficient funds for api-key ", ctx.var.apiKey)
+                    return 402, { message = "TimbleAPIGateway", statusCode = 402 }
+                end
+             
+            end
+        end
+    end
+
+    
+
+
+    -- Get the route id from APISIX context
+    
+
+    if consumer.labels then
+        ctx.var.apiRate = consumer.labels[rootId] or 0
+    else
+        ctx.var.apiRate = 0
+    end
+
+
+    
+    ctx.var.consumer  = consumer.username
+    
+
+   
     -- Ensure ctx.var.request_id is available
     local request_id = ctx.var.request_id or ngx.var.request_id or "unknown_request"
     local key = redis_key_prefix .. request_id
@@ -149,13 +189,13 @@ end
 
 
 -- 🔹 Timer (Background Task) to Write to Redis
-local function store_in_redis(premature, redis_host, redis_port, key, response_body, redis_ttl)
+local function store_in_redis(premature, redis_host, redis_port, key, response_body, redis_ttl,apiRate)
     if premature then
         return
     end
 
     local redis_client = redis:new()
-    redis_client:set_timeout(1000) -- 1 sec timeout
+    redis_client:set_timeout(4) -- 1 sec timeout
 
     -- Connect to Redis
     local ok, err = redis_client:connect(redis_host, redis_port)
@@ -190,7 +230,63 @@ local function store_in_redis(premature, redis_host, redis_port, key, response_b
 
     -- Store response in Redis with TTL
     local dataForRedis = cjson.encode(data)
+
+
+    -- local headers = ngx.req.get_headers()
+    -- local apikeyForWallet = headers['api-key']
+
+    -- Convert billable to boolean if it's a string
+
+    local billable = false
+    if type(transformData['billable']) == "string" then
+        local billable_str = transformData['billable']:lower()
+        if billable_str == "true" then
+            billable = true
+        elseif billable_str == "false" then
+            billable = false
+        end
+    end
+      
+
+    if tonumber(apiRate) ~= 0 and billable then
+        local wallet_key = "apisix:wallet_system:" .. response_body.apiKey
+        local wallet_data, wallet_err = redis_client:get(wallet_key)
+
+
+        if wallet_data and wallet_data ~= ngx.null then
+            local wallet_json = cjson.decode(wallet_data)
+            if wallet_json and wallet_json.wallet_system_data then
+                -- Convert remaining_amount to number (float), deduct apiRate, then store as string
+                local remaining = tonumber(wallet_json.wallet_system_data.remaining_amount)
+                -- Ensure apiRate is treated as a float
+                local rate = tonumber(apiRate)
+                if remaining and rate then
+                    remaining = remaining - rate
+                    wallet_json.wallet_system_data.remaining_amount = tostring(remaining)
+                end
+
+                local used_amount = tonumber(wallet_json.wallet_system_data.used_amount)
+                if used_amount and rate then
+                    used_amount = used_amount + rate
+                    wallet_json.wallet_system_data.used_amount = tostring(used_amount)
+                end
+
+                wallet_data = cjson.encode(wallet_json)
+            end
+        end
+
+        local successWallet, redis_err_wallet = redis_client:set(wallet_key, wallet_data)
+
+        if not successWallet then
+            core.log.warn("Failed to store wallet response in Redis: ", redis_err_wallet)
+        else
+            core.log.warn("Stored wallet response in Redis for key: ", key)
+        end
+
+    end
+    
     local success, redis_err = redis_client:setex(key, redis_ttl, dataForRedis)
+    
     if not success then
         core.log.warn("Failed to store response in Redis: ", redis_err)
     else
@@ -208,11 +304,11 @@ function _M.log(conf, ctx)
         return
     end
 
-    local redis_host = get_config_value(conf.redis_host, "13.203.59.217")
+    local redis_host = get_config_value(conf.redis_host, "127.0.0.1")
     local redis_port = get_config_value(conf.redis_port, 6379)
     local redis_ttl = get_config_value(conf.redis_ttl, 86400)
 
-    local ok, err = ngx.timer.at(0, store_in_redis, redis_host, redis_port, ctx.cache_redis_key, ctx.cache_response_body, redis_ttl)
+    local ok, err = ngx.timer.at(0, store_in_redis, redis_host, redis_port, ctx.cache_redis_key, ctx.cache_response_body, redis_ttl,ctx.var.apiRate)
     if not ok then
         core.log.error("Failed to create async Redis timer: ", err)
     else

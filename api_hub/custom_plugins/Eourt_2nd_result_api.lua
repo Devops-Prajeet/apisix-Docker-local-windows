@@ -5,9 +5,7 @@ local str = require("resty.string")
 local resty_sha256 = require("resty.sha256")
 local ngx = ngx
 
-local redis = require("resty.redis")
-
-local plugin_name = "pan_advance_v1"
+local plugin_name = "Eourt_2nd_result_api"
 
 local schema = { type = "object", properties = {} }
 
@@ -31,16 +29,6 @@ local function is_in_list(value, list)
     return false
 end
 
-
-
-
-local function is_valid_data(data)
-    if data == "N/A" then return true end 
-    if type(data) ~= "string" then return false end
-    if data:match("^%s*$") then return true end
-    return data:match("^[xX][xX][xX][xX][xX][xX][xX][xX]%d%d%d%d$") ~= nil
-end
-
 function _M.check_schema(conf)
     return core.schema.check(schema, conf)
 end
@@ -59,22 +47,51 @@ local function generate_transaction_id()
     return str.to_hex(sha256:final())
 end
 
-local billable_dict = {
-    [1] = { BILLABLE = "True", MESSAGE = "Success" },   
-    [2] = { code = 103, billable = "True", message = "Invalid ID number or combination of inputs" },
-    [3] = { code = 103, billable = "True", message = "Invalid ID number or combination of inputs" },
+-- 🧼 Enhanced Sanitization for Backslashes & Invalid UTF-8
 
+
+local function sanitize_string(value)
+    if type(value) ~= "string" then
+        return value
+    end
+
+    -- Remove control characters
+    value = value:gsub("[%z\1-\31\127]", "")
+
+    -- Normalize backslashes
+    value = value:gsub("\\", "\\\\") -- double all backslashes
+
+    -- Escape quotes (to prevent breaking JSON)
+    value = value:gsub('"', '\\"')
+
+    return value
+end
+
+local function deep_sanitize(tbl)
+    if type(tbl) ~= "table" then return tbl end
+    for k, v in pairs(tbl) do
+        if type(v) == "string" then
+            tbl[k] = sanitize_string(v)
+        elseif type(v) == "table" then
+            tbl[k] = deep_sanitize(v)
+        end
+    end
+    return tbl
+end
+
+local billable_dict = {
+    [1] = { BILLABLE = "True", MESSAGE = "Success" },
     [101] = { BILLABLE = "True", MESSAGE = "Success" },
-    [102] = { BILLABLE = "True", MESSAGE = "Invalid ID number or combination of inputs" },
+    [102] = { BILLABLE = "True", MESSAGE = "Missing 'name' or 'father_name" },
     [103] = { BILLABLE = "True", MESSAGE = "No records found for the given ID or combination of inputs" },
     [104] = { BILLABLE = "True", MESSAGE = "Max retries exceeded" },
     [110] = { BILLABLE = "False", MESSAGE = "Source Unavailable" },
-    [400] = { code = 110, billable = false, message = "Source Unavailable" },
+    [400] = { code = 102, billable = false, message = "Parameter Missing" },
     [401] = { code = 401, billable = false, message = "Bad credentials provided" },
     [402] = { code = 110, billable = false, message = "Source Unavailable" },
     [403] = { code = 110, billable = false, message = "Source Unavailable" },
     [404] = { code = 110, billable = false, message = "Source Unavailable" },
-    [301] = { code = 110, billable = false, message = "Source Unavailable" },
+    [422] = { BILLABLE = "False", MESSAGE = "Parameter Missing" },
     [302] = { code = 110, billable = false, message = "Source Unavailable" },
     [500] = { code = 110, billable = false, message = "Source Unavailable" },
     [502] = { code = 110, billable = false, message = "Source Unavailable" },
@@ -82,13 +99,31 @@ local billable_dict = {
     [504] = { code = 110, billable = false, message = "Source Unavailable" },
 }
 
-local success_status_code = {1, 200, 101}
-local invalid_missing_status_code = {102, 422}
-local source_down_status = {401, 402, 403, 301, 302}
-local no_record_found_status_code = {2, 3}
+local success_status_code = {1, 200, 101, 0}
+local invalid_missing_status_code = {400, 5, 422, 102}
+local no_record_found_status_code = {103}
 
 function _M.access(conf, ctx)
+    ngx.req.set_header("Accept-Encoding", "identity")
     ngx.ctx.request_timestamp = get_timestamp()
+
+    local req_body, err = core.request.get_body()
+    if not req_body then
+        return 400, { message = "Invalid request body", status = 102 }
+    end
+
+    local data, err = json.decode(req_body)
+    if not data then
+        return 400, { message = "Invalid JSON format", status = 102 }
+    end
+
+    if data.task_id ~= nil then
+        data.verify_id = data.task_id
+        data.task_id = nil
+        ngx.req.set_body_data(json.encode(data))
+    else
+        return 200, { message = "task_id not found", status = 102 }
+    end
 end
 
 local function sorted_json(tbl, key_order)
@@ -106,7 +141,6 @@ local function sorted_json(tbl, key_order)
     end
 
     local items = {}
-
     if key_order then
         for _, k in ipairs(key_order) do
             if tbl[k] ~= nil then
@@ -136,19 +170,13 @@ local function sorted_json(tbl, key_order)
 end
 
 local key_order = {
-    "transaction_id",
-    "input",
-    "success",
-    "billable",
-    "response_code",
-    "response_message",
-    "result",
-    "request_timestamp",
-    "response_timestamp"
+    "transaction_id", "input", "success", "billable",
+    "response_code", "response_message", "result",
+    "request_timestamp", "response_timestamp"
 }
 
 function _M.body_filter(conf, ctx)
-    local chunk, eof = ngx.arg[1], ngx.arg[2] 
+    local chunk, eof = ngx.arg[1], ngx.arg[2]
 
     if not ngx.ctx.response_body then
         ngx.ctx.response_body = {}
@@ -165,23 +193,29 @@ function _M.body_filter(conf, ctx)
 
         local new_json = json.new()
         new_json.encode_sparse_array(true, 1, 1)
+
         local data, err = new_json.decode(full_body)
 
         local result = {}
-
         if ngx.status == 401 then
             result["response_code"] = 401
             result["response_message"] = "Bad credentials provided"
             ngx.arg[1] = new_json.encode(result)
             ngx.arg[2] = true
             return
-        elseif ngx.status == 403 then 
+        elseif ngx.status == 403 then
             result["response_code"] = 403
             result["response_message"] = "Access Denied"
             ngx.arg[1] = new_json.encode(result)
             ngx.arg[2] = true
             return
-        elseif ngx.status == 429 then 
+        elseif ngx.status == 422 then
+            result["response_code"] = 422
+            result["response_message"] = "Parameter Missing"
+            ngx.arg[1] = new_json.encode(result)
+            ngx.arg[2] = true
+            return
+        elseif ngx.status == 429 then
             result["response_code"] = 429
             result["response_message"] = "Limit exceeds , Too many requests"
             ngx.arg[1] = new_json.encode(result)
@@ -192,24 +226,27 @@ function _M.body_filter(conf, ctx)
         local request_body = ngx.req.get_body_data()
         local input_data = request_body and pcall(json.decode, request_body) and json.decode(request_body) or {}
 
-        input_data["consent_text"] = nil
-        input_data["consent"] = nil
-        result["input"] = input_data
+        if input_data["verify_id"] then
+            input_data["task_id"] = input_data["verify_id"]
+            input_data["verify_id"] = nil
+        end
 
+        result["input"] = input_data
         result["transaction_id"] = generate_transaction_id()
 
         local statusCode = data and data.status or data.result_code
         local http_status = tonumber(statusCode)
 
-
-        if is_in_list(http_status, success_status_code) then
+        if data and data.status == 102 then
+            result["response_code"] = 102
+            result["billable"] = "False"
+            result["success"] = "False"
+        elseif is_in_list(http_status, success_status_code) then
             result["response_code"] = 101
         elseif is_in_list(http_status, invalid_missing_status_code) then
             result["response_code"] = 102
         elseif is_in_list(http_status, no_record_found_status_code) then
             result["response_code"] = 103
-        elseif is_in_list(http_status, source_down_status) then
-            result["response_code"] = 110
         else
             result["response_code"] = 110
         end
@@ -218,119 +255,43 @@ function _M.body_filter(conf, ctx)
 
         result["billable"] = billable_info.BILLABLE
         result["success"] = billable_info.BILLABLE == "True" and "True" or "False"
-        result["response_message"] = billable_info.MESSAGE
+        if not result["response_message"] then
+            result["response_message"] = billable_info.MESSAGE
+        end
 
-        result["request_timestamp"] = ngx.ctx.request_timestamp  
+        result["request_timestamp"] = ngx.ctx.request_timestamp
         result["response_timestamp"] = get_timestamp()
 
-        -- Rename specific result fields
-      local transformed_result = {}
-
-      -- Check response_code
-
-   
-        if data and result.response_code == 101 then
-            local original_result = data.result or data.msg or {}
-            if type(original_result) ~= "table" then
-                original_result = {}
-            end
-
-            -- Mapping of old keys to new keys
-            local field_map = {
-                aadhaar = "AADHAAR_NUMBER",
-                aadharlink = "AADHAAR_LINKAGE",
-                category = "PAN_TYPE",
-                dob = "DOB",
-                email = "EMAIL",
-                first_name = "FIRST_NAME",
-                full_name = "FULLNAME",
-                gender = "GENDER",
-                last_name = "LAST_NAME",
-                middle_name = "MIDDLE_NAME",
-                mobile = "MOBILE",
-                pan = "PAN"
-                -- tax is intentionally excluded
-            }
-
-            -- Apply mapped keys
-            for old_key, new_key in pairs(field_map) do
-                local value = original_result[old_key]
-                if value ~= nil then
-                    transformed_result[new_key] = value
-                else
-                    transformed_result[new_key] = "N/A"
-                end
-            end
-
-            -- Handle address or address_detalis separately
-            local address_data = original_result["ADDRESS"] or original_result["address"] or original_result["address_detalis"]
-            if type(address_data) == "table" then
-                local new_address = {}
-                for addr_k, addr_v in pairs(address_data) do
-                    if addr_k == "address_line_1" then
-                        new_address["AADDRESS_LINE_1"] = addr_v
-                    elseif addr_k == "address_line_2" then
-                        new_address["AADDRESS_LINE_2"] = addr_v
-                    elseif addr_k == "address_line_3" then
-                        new_address["AADDRESS_LINE_3"] = addr_v
-                    elseif addr_k == "address_line_4" then
-                        new_address["AADDRESS_LINE_4"] = addr_v
-                    elseif addr_k == "address_line_5" then
-                        new_address["AADDRESS_LINE_5"] = addr_v
-                    elseif addr_k == "pin_code" then
-                        new_address["PIN_CODE"] = addr_v
-                    elseif addr_k == "state" then
-                        new_address["STATE"] = addr_v
-                    else
-                        new_address[addr_k] = addr_v
-                    end
-                end
-                transformed_result["ADDRESS"] = new_address
+        if data and data.message then
+            local msg_data = tostring(data.message):match("^%s*(.-)%s*$")
+            if msg_data == "verify_id not found" then
+                result["response_message"] = "task_id not found"
+                result["result"] = {}
+                result["billable"] = "False"
+                result["success"] = "False"
+            elseif msg_data == "Invalid request body" or msg_data == "task_id not found" then
+                result["result"] = {}
+                result["billable"] = "False"
+                result["success"] = "False"
+                result["response_message"] = "task_id parameter missing"
             else
-                transformed_result["ADDRESS"] = {
-                    AADDRESS_LINE_1 = "N/A",
-                    AADDRESS_LINE_2 = "N/A",
-                    AADDRESS_LINE_3 = "N/A",
-                    AADDRESS_LINE_4 = "N/A",
-                    AADDRESS_LINE_5 = "N/A",
-                    PIN_CODE = "N/A",
-                    STATE = "N/A"
-                }
+                result["response_message"] = msg_data
+                result["result"] = {}
             end
-
-             -- validation
-            if is_valid_data(transformed_result["AADHAAR_NUMBER"]) then
-                    result["result"] = transformed_result
-
-            else
-                    result.success = "False"
-                    result.billable = "False"
-                    result.response_message = "Source Unavailable"  
-                    result.response_code = 110
-                    result["result"]={}
-            end
-
-
-        else
-            -- Response code is not 101
-            transformed_result = {}
         end
 
-        
-
-
-        ctx.var.isBulk = "API"
-        local header_key = "x-trx-type"
-        if ngx.req.get_headers()[header_key] then
-            ctx.var.isBulk = ngx.req.get_headers()[header_key]
+        if data and data.cases then
+            result["result"] = data.cases or {}
         end
+
+        ctx.var.isBulk = ngx.req.get_headers()["x-trx-type"] or "API"
+        ctx.var.isLogIn_id = ngx.req.get_headers()["x-login-id"] or 0
+
+        -- 🧼 Final sanitization before encoding to JSON
+        deep_sanitize(result)
 
         ngx.arg[1] = sorted_json(result, key_order)
         ngx.arg[2] = true
-
-
-
-        
     end
 end
 

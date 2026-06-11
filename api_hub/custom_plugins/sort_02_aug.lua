@@ -153,81 +153,63 @@ function _M.body_filter(conf, ctx)
     end
 
     if eof then
-        
         -- Concatenate full response
         local full_body = table.concat(ngx.ctx.response_body)
         ctx.var.responseBodyFromSource = full_body
-        
+
         local new_json = json.new()
         new_json.encode_sparse_array(true, 1, 1)
-        local data,err = new_json.decode(full_body)
-        core.log.warn("JSON decoding after everythigs", new_json.encode(data),new_json.encode(err))
-        
-        
-        -- local sourceMessage = data and  data['message'] or data['response_message']
-        local result = { }
+        local data, err = new_json.decode(full_body)
+        local result = {}
+
+        -- Handle JSON decode error
+        if not data then
+            result["response_code"] = 101
+            result["response_message"] = "Internal Error: Invalid JSON response"
+            result["billable"] = "False"
+            result["success"] = "False"
+            result["result"] = {}
+            result["request_timestamp"] = ngx.ctx.request_timestamp
+            result["response_timestamp"] = get_timestamp()
+            ngx.arg[1] = sorted_json(result)
+            ngx.arg[2] = true
+            return
+        end
+
         if ngx.status == 401 then
             result["response_code"] = 401
             result["response_message"] = "Bad credentials provided"
             local new_bodys = new_json.encode(result)
-        
-            -- Set modified response and terminate further chunk processing
             ngx.arg[1] = new_bodys
             ngx.arg[2] = true
-            
             return
-            
-        elseif ngx.status == 403 then 
+        elseif ngx.status == 403 then
             result["response_code"] = 403
             result["response_message"] = "Access Denied"
             local new_bodys = new_json.encode(result)
-        
-            -- Set modified response and terminate further chunk processing
             ngx.arg[1] = new_bodys
             ngx.arg[2] = true
             return
-
-         elseif ngx.status == 402 and data.message and data.message == "TimbleAPIGateway" then 
-            result["response_code"] = 402
-            result["response_message"] = "Insufficient funds"
-            local new_bodys = new_json.encode(result)
-        
-            -- Set modified response and terminate further chunk processing
-            ngx.arg[1] = new_bodys
-            ngx.arg[2] = true
-            return
-
-         elseif ngx.status == 429 then 
+        elseif ngx.status == 429 then
             result["response_code"] = 429
             result["response_message"] = "Limit exceeds , Too many requests"
             local new_bodys = new_json.encode(result)
-        
-        
-            -- Set modified response and terminate further chunk processing
             ngx.arg[1] = new_bodys
             ngx.arg[2] = true
             return
-
         end
-
 
         local request_body = ngx.req.get_body_data()
         local input_data = request_body and pcall(json.decode, request_body) and json.decode(request_body) or {}
-
         if input_data["consent_text"] ~= nil then
             input_data["consent_text"] = nil
         end
-
         if input_data["consent"] ~= nil then
             input_data["consent"] = nil
         end
         result["input"] = input_data
-
-        -- Generate and add a unique transaction ID
         result["transaction_id"] = generate_transaction_id()
-        
-        
-        -- Get HTTP status from the response
+
         local statusCode = data and (
             data.status
             or data.statusCode
@@ -236,95 +218,51 @@ function _M.body_filter(conf, ctx)
             or (type(data.result) == "table" and data.result.status_code)
             or (type(data.error) == "table" and data.error.statusCode)
         )
-
-        local http_status = tonumber(statusCode) 
-        -- Map source HTTP status to response code
-
-
-        
-       
+        local http_status = tonumber(statusCode)
         if is_in_list(http_status, success_status_code) then
             result["response_code"] = 101
         elseif is_in_list(http_status, invalid_missing_status_code) then
             result["response_code"] = 102
         elseif is_in_list(http_status, invalid_missing_crime) then
             result["response_code"] = 125
-          -- local invalid_missing_crime = {125}
         elseif is_in_list(http_status, no_record_found_status_code) then
             result["response_code"] = 103
-        else  
+        else
             result["response_code"] = 110
         end
-        
-        
 
         local billable_info = billable_dict[result["response_code"]] or { BILLABLE = "False", MESSAGE = "Unknown Response Code" }
-
         result["billable"] = billable_info.BILLABLE
-
-        if billable_info.BILLABLE == "True" then
-            result["success"] = "True"
-        else 
-            result["success"] = "False"
-        end
-
+        result["success"] = billable_info.BILLABLE == "True" and "True" or "False"
         result["response_message"] = billable_info.MESSAGE
-        result["request_timestamp"] = ngx.ctx.request_timestamp  
+        result["request_timestamp"] = ngx.ctx.request_timestamp
         result["response_timestamp"] = get_timestamp()
-        core.log.warn("data bulk" ,new_json.encode(data))
+        core.log.warn("data bulk", new_json.encode(data))
 
-   
-
-        
-        if result["response_code"]==125 then
+        if result["response_code"] == 125 then
             result["response_code"] = 102
             result["response_message"] = "Missing name or address"
         end
 
-
-        if data then
-            result["result"] = data.result or data.msg or data.data or {}
-        else
-            result["result"] = {}
-        end
-
-      
-
-
-
-       
-        
+        result["result"] = data and data.result or data.msg or data.data or {}
         if type(result["result"]) == "string" then
-            result["result"] = "" 
+            result["result"] = ""
         end
 
-        -- Check for a specific key in the request headers
         ctx.var.isBulk = "API"
-        local header_key = "x-trx-type" -- Replace with the desired header key
- --       core.log.warn("data bulk", new_json.encode(ngx.req.get_headers()))
+        local header_key = "x-trx-type"
         if ngx.req.get_headers()[header_key] then
             ctx.var.isBulk = ngx.req.get_headers()[header_key]
---            core.log.warn("data bulk", new_json.encode(ctx.var.isBulk))
         end
 
-        -- Check for a specific key in the request headers
         ctx.var.isLogIn_id = 0
-        local header_key_login = "x-login-id"  
+        local header_key_login = "x-login-id"
         if ngx.req.get_headers()[header_key_login] then
             ctx.var.isLogIn_id = ngx.req.get_headers()[header_key_login]
         end
         core.log.warn("data uiianilllllllllllbulk", new_json.encode(result))
 
-     
-
-
-
         local new_body = sorted_json(result)
-        -- Set modified response and terminate further chunk processing
         ngx.arg[1] = new_body
         ngx.arg[2] = true
-        
     end
-end
-
-return _M
